@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Moyo",
+    "slug": "moyo",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0D0D0F"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0D0D0F"
+      },
+      "package": "com.viellson2003.moyo"
+    },
+    "plugins": [
+      "expo-sharing"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "e9729c26-4593-4a41-9047-2e7237f5958d"
+      }
+    },
+    "owner": "viellson2003"
+  }
+}
