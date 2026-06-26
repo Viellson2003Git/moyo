@@ -15,20 +15,24 @@ import { useProvinciaDoUser } from '../../hooks/useProvincia'
 import { usePushNotifications } from '../../hooks/usePushNotifications'
 import { useAcesso } from '../../hooks/useAcesso'
 import { limparTelefoneLembrado } from '../../utils/session'
+import { mostrarAlerta, confirmar } from '../../utils/alert'
 
 type Profile     = { nome: string; email: string }
-type Voluntario  = { id: string; numero_serial: string | null; tipo_sanguineo: string | null; estado: string }
+type Voluntario  = { id: string; 
+  numero_serial: string | null; 
+  tipo_sanguineo: string | null; 
+  estado: string;  banco_id: string | null; }
 type Doacao      = { data_doacao: string; tipo_doacao: string }
 type Agendamento = { estado: string; slots: { data: string; hora: string } | null } | null
 
 export default function VoluntarioDashboard() {
-  // ── hooks ──────────────────────────────────────────────────────────────────
+  
   const { isApto, isPendente } = useAcesso()
   const { provincia }          = useProvinciaDoUser()
   const { width }              = useWindowDimensions()
   const isWeb                  = Platform.OS === 'web' && width > 900
 
-  // ── state ──────────────────────────────────────────────────────────────────
+
   const [userId,     setUserId]     = useState<string>('')
   const [profile,    setProfile]    = useState<Profile | null>(null)
   const [voluntario, setVoluntario] = useState<Voluntario | null>(null)
@@ -36,17 +40,108 @@ export default function VoluntarioDashboard() {
   const [proximo,    setProximo]    = useState<Agendamento>(null)
   const [loading,    setLoading]    = useState(true)
 
-
-  // Adiciona estes estados no topo do componente:
 const [campanhas, setCampanhas] = useState<any[]>([])
 const [emergencias, setEmergencias] = useState<any[]>([])
 
+
+// Estados para fila de exames
+const [filaExame, setFilaExame]       = useState<any>(null)
+const [loadingFila, setLoadingFila]   = useState(false)
+const [tirandoSenha, setTirandoSenha] = useState(false)
+const [posicaoActual, setPosicaoActual] = useState<number>(0)
+
+
+const [bancoId, setBancoId]     = useState<string | null>(null)
+const [bancoNome, setBancoNome] = useState<string>('')
+
+// No loadData, adiciona:
+
+
   useEffect(() => { loadData() }, [])
 
-  // ── data ───────────────────────────────────────────────────────────────────
+  async function loadFilaExame(volId: string, bancoId: string) {
+            const hoje = new Date().toISOString().split('T')[0]
+            const { data } = await supabase
+              .from('fila_exames')
+              .select('*')
+              .eq('voluntario_id', volId)
+              .eq('data', hoje)
+              .not('estado', 'in', '("cancelado","concluido")')
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+            setFilaExame(data)
+
+        if (data) {
+          // Conta quantas pessoas estão à frente
+          const { count } = await supabase
+            .from('fila_exames')
+            .select('*', { count: 'exact', head: true })
+            .eq('banco_id', bancoId)
+            .eq('tipo', data.tipo)
+            .eq('data', hoje)
+            .eq('estado', 'aguardando')
+            .lt('posicao', data.posicao)
+          setPosicaoActual(count || 0)
+        }
+  }
+
+  async function tirarSenha(tipo: 'rastreio' | 'doacao') {
+        if (!voluntario || !bancoId) {
+          mostrarAlerta('Atenção', 'Não foi possível determinar o teu hospital. Actualiza o perfil.')
+          return
+        }
+        setTirandoSenha(true)
+
+        // Gera a senha via RPC
+        const { data: senhaData, error: senhaErr } = await supabase
+          .rpc('gerar_senha_fila', {
+            p_banco_id: bancoId!,   // ← aqui
+            p_tipo: tipo,
+          })
+
+        if (senhaErr || !senhaData || senhaData.length === 0) {
+          mostrarAlerta('Erro', 'Não foi possível gerar a senha. Tenta novamente.')
+          setTirandoSenha(false)
+          return
+        }
+
+        const { senha, posicao } = senhaData[0]
+
+        const { error } = await supabase.from('fila_exames').insert({
+          voluntario_id: voluntario.id,
+          banco_id: bancoId!,
+          tipo,
+          senha,
+          posicao,
+          estado: 'aguardando',
+        })
+
+        if (error) {
+          mostrarAlerta('Erro', error.message)
+        } else {
+          mostrarAlerta(
+            `🎫 Senha ${senha}`,
+            tipo === 'rastreio'
+              ? 'Senha de rastreio gerada! Dirije-te ao hospital. Podes acompanhar a fila aqui.'
+              : 'Senha de doação gerada! Aguarda ser chamado.'
+          )
+          await loadData()
+        }
+        setTirandoSenha(false)
+  }
+  async function cancelarSenha() {
+        if (!filaExame) return
+        confirmar('Cancelar senha', 'Tens a certeza que queres cancelar a tua senha?', async () => {
+          await supabase.from('fila_exames')
+            .update({ estado: 'cancelado' })
+            .eq('id', filaExame.id)
+          setFilaExame(null)
+          loadData()
+        })
+  }
   async function loadData() {
     try {
-
       const { data: campsData } = await supabase
         .from('campanhas')
         .select('id, titulo, descricao, tipo, tipo_sanguineo, meta_doadores, total_atingido, data_fim')
@@ -74,12 +169,12 @@ const [emergencias, setEmergencias] = useState<any[]>([])
 
       const { data: vol } = await supabase
         .from('voluntarios')
-        .select('id, numero_serial, tipo_sanguineo, estado')
+        .select('id, numero_serial, tipo_sanguineo, estado, banco_id')
         .eq('profile_id', user.id).single()
 
       setProfile(prof)
       setVoluntario(vol)
-
+      if (vol?.banco_id) setBancoId(vol.banco_id) 
       usePushNotifications(user.id)
 
       if (vol?.id) {
@@ -106,6 +201,22 @@ const [emergencias, setEmergencias] = useState<any[]>([])
     setLoading(false)
   }
 
+useEffect(() => {
+  if (!voluntario?.id || !bancoId) return
+  
+
+  const canal = supabase
+    .channel(`fila-vol-${voluntario.id}-${Date.now()}`)
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'fila_exames',
+    }, () => loadFilaExame(voluntario.id, bancoId))
+    .subscribe()
+
+  return () => { supabase.removeChannel(canal) }  
+}, [voluntario?.id, bancoId]) 
+
  async function handleLogout() {
   await supabase.auth.signOut()
   await limparTelefoneLembrado()
@@ -119,7 +230,7 @@ const [emergencias, setEmergencias] = useState<any[]>([])
     </View>
   )
 
-  // ── derived state — sem redeclarar isApto / isPendente ────────────────────
+  
   const nome    = profile?.nome?.split(' ')[0] || 'Doador'
   const isExame = voluntario?.estado === 'em_exame'
 
@@ -485,6 +596,294 @@ const [emergencias, setEmergencias] = useState<any[]>([])
               </TouchableOpacity>
             </View>
 
+            {/* ══ FILA DE EXAMES / RASTREIO ══ */}
+            {(voluntario?.estado === 'pendente' || voluntario?.estado === 'em_exame') && (
+              <View style={s.section}>
+                {!filaExame ? (
+                  /* Widget para tirar senha */
+                  <View style={s.filaWidget}>
+                    <View style={s.filaWidgetGlow} />
+                    <View style={s.filaWidgetHeader}>
+                      <Text style={{ fontSize: 32 }}>🏥</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.filaWidgetTitulo}>Precisas de fazer os exames</Text>
+                        <Text style={s.filaWidgetSub}>
+                          Tira a tua senha agora e vai ao hospital quando quiseres — a fila guarda o teu lugar.
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={s.filaOpcoes}>
+                      <TouchableOpacity
+                        style={[s.filaOpcaoBtn, { borderColor: Colors.blue + '60' }]}
+                        onPress={() => tirarSenha('rastreio')}
+                        disabled={tirandoSenha}
+                      >
+                        {tirandoSenha ? (
+                          <ActivityIndicator size="small" color={Colors.blue} />
+                        ) : (
+                          <>
+                            <Text style={{ fontSize: 28, marginBottom: 8 }}>🧪</Text>
+                            <Text style={s.filaOpcaoTitulo}>Exames de Rastreio</Text>
+                            <Text style={s.filaOpcaoDesc}>
+                              Hemoglobina, pressão, tipo sanguíneo e triagem completa
+                            </Text>
+                            <View style={s.filaOpcaoBadge}>
+                              <Text style={s.filaOpcaoBadgeText}>Tirar Senha R</Text>
+                            </View>
+                          </>
+                        )}
+                      </TouchableOpacity>
+
+                      
+                    </View>
+                  </View>
+                ) : (
+                  /* Widget de rastreio em tempo real */
+                  <View style={s.rastreioCard}>
+                    <View style={s.rastreioHeader}>
+                      <View style={s.rastreioSenhaBox}>
+                        <Text style={s.rastreioSenhaLabel}>A TUA SENHA</Text>
+                        <Text style={s.rastreioSenha}>{filaExame.senha}</Text>
+                        <Text style={s.rastreioTipo}>
+                          {filaExame.tipo === 'rastreio' ? '🧪 Rastreio' : '🩸 Doação'}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1, paddingLeft: 16 }}>
+                        <Text style={s.rastreioEstadoLabel}>ESTADO</Text>
+                        <View style={s.rastreioEstadoBadge}>
+                          <View style={[s.rastreioEstadoDot, {
+                            backgroundColor:
+                              filaExame.estado === 'chamado'         ? Colors.gold :
+                              filaExame.estado === 'em_atendimento'  ? Colors.blue :
+                              filaExame.estado === 'concluido'       ? Colors.green : Colors.muted
+                          }]} />
+                          <Text style={[s.rastreioEstadoText, {
+                            color:
+                              filaExame.estado === 'chamado'         ? Colors.gold :
+                              filaExame.estado === 'em_atendimento'  ? Colors.blue :
+                              filaExame.estado === 'concluido'       ? Colors.green : Colors.white
+                          }]}>
+                            {filaExame.estado === 'aguardando'      ? 'A aguardar' :
+                            filaExame.estado === 'chamado'         ? '📣 CHAMADO!' :
+                            filaExame.estado === 'em_atendimento'  ? 'Em atendimento' :
+                            filaExame.estado === 'concluido'       ? 'Concluído' : filaExame.estado}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+
+                    {/* Posição na fila */}
+                    {filaExame.estado === 'aguardando' && (
+                      <View style={s.rastreioPosicao}>
+                        <View style={s.rastreioPosicaoItem}>
+                          <Text style={s.rastreioPosicaoNum}>{posicaoActual}</Text>
+                          <Text style={s.rastreioPosicaoLabel}>à tua frente</Text>
+                        </View>
+                        <View style={s.rastreioDivider} />
+                        <View style={s.rastreioPosicaoItem}>
+                          <Text style={s.rastreioPosicaoNum}>#{filaExame.posicao}</Text>
+                          <Text style={s.rastreioPosicaoLabel}>a tua posição</Text>
+                        </View>
+                        <View style={s.rastreioDivider} />
+                        <View style={s.rastreioPosicaoItem}>
+                          <Text style={s.rastreioPosicaoNum}>
+                            {posicaoActual === 0 ? 'Próx.' : `~${posicaoActual * 8}min`}
+                          </Text>
+                          <Text style={s.rastreioPosicaoLabel}>espera est.</Text>
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Alerta quando chamado */}
+                    {filaExame.estado === 'chamado' && (
+                      <View style={s.chamadoAlerta}>
+                        <Text style={{ fontSize: 32 }}>📣</Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={s.chamadoAlertaTitulo}>A tua vez chegou!</Text>
+                          <Text style={s.chamadoAlertaSub}>
+                            Dirige-te ao balcão de atendimento agora.
+                          </Text>
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Timeline de passos */}
+                    <View style={s.rastreioTimeline}>
+                      <TimelineStep
+                        done={true}
+                        active={false}
+                        label="Senha tirada"
+                        hora={new Date(filaExame.created_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}
+                      />
+                      <TimelineStep
+                        done={['chamado','em_atendimento','concluido'].includes(filaExame.estado)}
+                        active={filaExame.estado === 'chamado'}
+                        label="Chamado ao balcão"
+                        hora={filaExame.hora_chamada
+                          ? new Date(filaExame.hora_chamada).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })
+                          : undefined
+                        }
+                      />
+                      <TimelineStep
+                        done={['em_atendimento','concluido'].includes(filaExame.estado)}
+                        active={filaExame.estado === 'em_atendimento'}
+                        label="Em atendimento"
+                        hora={undefined}
+                      />
+                      <TimelineStep
+                        done={filaExame.estado === 'concluido'}
+                        active={false}
+                        label="Exames concluídos"
+                        hora={filaExame.hora_conclusao
+                          ? new Date(filaExame.hora_conclusao).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })
+                          : undefined
+                        }
+                        isLast
+                      />
+                    </View>
+
+                    {filaExame.estado === 'aguardando' && (
+                      <TouchableOpacity style={s.cancelarSenhaBtn} onPress={cancelarSenha}>
+                        <Text style={s.cancelarSenhaBtnText}>Cancelar senha</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* ══ FILA DE DOAÇÃO — para aptos ══ */}
+{voluntario?.estado === 'apto' && (
+  <View style={s.section}>
+    {!filaExame ? (
+      // Sem senha activa — mostra botão para tirar
+      <TouchableOpacity
+        style={[s.filaOpcaoBtn, { borderColor: Colors.red + '60' }]}
+        onPress={() => tirarSenha('doacao')}
+        disabled={tirandoSenha}
+      >
+        {tirandoSenha ? (
+          <ActivityIndicator size="small" color={Colors.red} />
+        ) : (
+          <>
+            <Text style={{ fontSize: 28, marginBottom: 8 }}>🩸</Text>
+            <Text style={s.filaOpcaoTitulo}>Doação de Sangue</Text>
+            <Text style={s.filaOpcaoDesc}>Faz a tua doação de sangue hoje</Text>
+            <View style={[s.filaOpcaoBadge, { backgroundColor: Colors.red + '20' }]}>
+              <Text style={[s.filaOpcaoBadgeText, { color: Colors.red }]}>
+                Tirar Senha D
+              </Text>
+            </View>
+          </>
+        )}
+      </TouchableOpacity>
+    ) : (
+      // Senha activa — mostra rastreio em tempo real (igual ao rastreio)
+      <View style={s.rastreioCard}>
+        <View style={s.rastreioHeader}>
+          <View style={s.rastreioSenhaBox}>
+            <Text style={s.rastreioSenhaLabel}>A TUA SENHA</Text>
+            <Text style={s.rastreioSenha}>{filaExame.senha}</Text>
+            <Text style={s.rastreioTipo}>🩸 Doação</Text>
+          </View>
+          <View style={{ flex: 1, paddingLeft: 16 }}>
+            <Text style={s.rastreioEstadoLabel}>ESTADO</Text>
+            <View style={s.rastreioEstadoBadge}>
+              <View style={[s.rastreioEstadoDot, {
+                backgroundColor:
+                  filaExame.estado === 'chamado'        ? Colors.gold :
+                  filaExame.estado === 'em_atendimento' ? Colors.blue :
+                  filaExame.estado === 'concluido'      ? Colors.green : Colors.muted
+              }]} />
+              <Text style={[s.rastreioEstadoText, {
+                color:
+                  filaExame.estado === 'chamado'        ? Colors.gold :
+                  filaExame.estado === 'em_atendimento' ? Colors.blue :
+                  filaExame.estado === 'concluido'      ? Colors.green : Colors.white
+              }]}>
+                {filaExame.estado === 'aguardando'     ? 'A aguardar' :
+                 filaExame.estado === 'chamado'        ? '📣 CHAMADO!' :
+                 filaExame.estado === 'em_atendimento' ? 'Em atendimento' :
+                 filaExame.estado === 'concluido'      ? 'Concluído' : filaExame.estado}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {filaExame.estado === 'aguardando' && (
+          <View style={s.rastreioPosicao}>
+            <View style={s.rastreioPosicaoItem}>
+              <Text style={s.rastreioPosicaoNum}>{posicaoActual}</Text>
+              <Text style={s.rastreioPosicaoLabel}>à tua frente</Text>
+            </View>
+            <View style={s.rastreioDivider} />
+            <View style={s.rastreioPosicaoItem}>
+              <Text style={s.rastreioPosicaoNum}>#{filaExame.posicao}</Text>
+              <Text style={s.rastreioPosicaoLabel}>a tua posição</Text>
+            </View>
+            <View style={s.rastreioDivider} />
+            <View style={s.rastreioPosicaoItem}>
+              <Text style={s.rastreioPosicaoNum}>
+                {posicaoActual === 0 ? 'Próx.' : `~${posicaoActual * 8}min`}
+              </Text>
+              <Text style={s.rastreioPosicaoLabel}>espera est.</Text>
+            </View>
+          </View>
+        )}
+
+        {filaExame.estado === 'chamado' && (
+          <View style={s.chamadoAlerta}>
+            <Text style={{ fontSize: 32 }}>📣</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={s.chamadoAlertaTitulo}>A tua vez chegou!</Text>
+              <Text style={s.chamadoAlertaSub}>
+                Dirige-te ao balcão de doação agora.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        <View style={s.rastreioTimeline}>
+          <TimelineStep
+            done={true} active={false} label="Senha tirada"
+            hora={new Date(filaExame.created_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}
+          />
+          <TimelineStep
+            done={['chamado','em_atendimento','concluido'].includes(filaExame.estado)}
+            active={filaExame.estado === 'chamado'}
+            label="Chamado ao balcão"
+            hora={filaExame.hora_chamada
+              ? new Date(filaExame.hora_chamada).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })
+              : undefined}
+          />
+          <TimelineStep
+            done={['em_atendimento','concluido'].includes(filaExame.estado)}
+            active={filaExame.estado === 'em_atendimento'}
+            label="A realizar doação"
+            hora={undefined}
+          />
+          <TimelineStep
+            done={filaExame.estado === 'concluido'}
+            active={false}
+            label="Doação concluída 🩸"
+            hora={filaExame.hora_conclusao
+              ? new Date(filaExame.hora_conclusao).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })
+              : undefined}
+            isLast
+          />
+        </View>
+
+        {filaExame.estado === 'aguardando' && (
+          <TouchableOpacity style={s.cancelarSenhaBtn} onPress={cancelarSenha}>
+            <Text style={s.cancelarSenhaBtnText}>Cancelar senha</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    )}
+  </View>
+)}
+
             {doacoes.length === 0 ? (
               <View style={s.emptyBox}>
                 <Text style={{ fontSize: 36, marginBottom: 12 }}>🩸</Text>
@@ -621,7 +1020,38 @@ function CampaignCard({
   )
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+function TimelineStep({ done, active, label, hora, isLast }: {
+  done: boolean; active: boolean; label: string
+  hora?: string; isLast?: boolean
+}) {
+  const cor = done ? Colors.green : active ? Colors.gold : Colors.muted2
+  return (
+    <View style={{ flexDirection: 'row', gap: 12 }}>
+      <View style={{ alignItems: 'center' }}>
+        <View style={[ts.dot, { backgroundColor: cor, borderColor: cor }]}>
+          {done && <Feather name="check" size={10} color={Colors.dark} />}
+          {active && !done && <View style={[ts.dotPulse, { backgroundColor: Colors.gold }]} />}
+        </View>
+        {!isLast && <View style={[ts.line, { backgroundColor: done ? Colors.green : Colors.dark4 }]} />}
+      </View>
+      <View style={{ flex: 1, paddingBottom: isLast ? 0 : 16 }}>
+        <Text style={[ts.label, { color: done || active ? Colors.white : Colors.muted }]}>{label}</Text>
+        {hora && <Text style={ts.hora}>{hora}</Text>}
+        {active && <Text style={[ts.hora, { color: Colors.gold }]}>Agora</Text>}
+      </View>
+    </View>
+  )
+}
+
+const ts = StyleSheet.create({
+  dot:      { width: 22, height: 22, borderRadius: 11, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  dotPulse: { width: 8, height: 8, borderRadius: 4 },
+  line:     { width: 2, flex: 1, marginVertical: 2 },
+  label:    { fontSize: 13, fontWeight: '600' },
+  hora:     { fontSize: 11, color: Colors.muted, marginTop: 2 },
+})
+
+
 
 function estadoVal(e?: string | null) {
   return ({ pendente: '⏳', em_exame: '🔬', apto: '✓', inapto_temp: '✗', inapto_perm: '✗' } as Record<string, string>)[e || ''] || '—'
@@ -872,4 +1302,67 @@ urgentTag: {
   paddingHorizontal: 7, paddingVertical: 2,
 },
 urgentTagText: { fontSize: 9, fontWeight: '800', color: Colors.white, letterSpacing: 0.5 },
+
+// Adiciona ao StyleSheet do dashboard do voluntário
+filaWidget: {
+  backgroundColor: Colors.dark2, borderRadius: 18, padding: 18,
+  borderWidth: 1, borderColor: 'rgba(74,158,255,0.2)',
+  overflow: 'hidden', position: 'relative',
+},
+filaWidgetGlow: {
+  position: 'absolute', top: -40, right: -40,
+  width: 140, height: 140, borderRadius: 70,
+  backgroundColor: 'rgba(74,158,255,0.08)',
+},
+filaWidgetHeader: { flexDirection: 'row', gap: 12, alignItems: 'flex-start', marginBottom: 16 },
+filaWidgetTitulo: { fontSize: 15, fontWeight: '700', color: Colors.white, marginBottom: 4 },
+filaWidgetSub:    { fontSize: 12, color: Colors.muted, lineHeight: 17 },
+
+filaOpcoes: { flexDirection: 'row', gap: 10 },
+filaOpcaoBtn: {
+  flex: 1, backgroundColor: Colors.dark3, borderRadius: 14,
+  padding: 14, borderWidth: 1.5, alignItems: 'center',
+},
+filaOpcaoTitulo: { fontSize: 13, fontWeight: '700', color: Colors.white, textAlign: 'center', marginBottom: 6 },
+filaOpcaoDesc:   { fontSize: 11, color: Colors.muted, textAlign: 'center', lineHeight: 15, marginBottom: 10 },
+filaOpcaoBadge:  { backgroundColor: 'rgba(74,158,255,0.15)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
+filaOpcaoBadgeText: { fontSize: 11, fontWeight: '700', color: Colors.blue },
+
+rastreioCard: {
+  backgroundColor: Colors.dark2, borderRadius: 18, padding: 18,
+  borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+},
+rastreioHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
+rastreioSenhaBox: { alignItems: 'center', backgroundColor: Colors.dark3, borderRadius: 14, padding: 14, minWidth: 90 },
+rastreioSenhaLabel: { fontSize: 9, fontWeight: '700', color: Colors.muted, letterSpacing: 0.8, marginBottom: 4 },
+rastreioSenha: { fontSize: 28, fontWeight: '900', color: Colors.white, fontFamily: 'monospace' },
+rastreioTipo:  { fontSize: 10, color: Colors.muted, marginTop: 4 },
+
+rastreioEstadoLabel: { fontSize: 9, fontWeight: '700', color: Colors.muted, letterSpacing: 0.8, marginBottom: 6 },
+rastreioEstadoBadge: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+rastreioEstadoDot:   { width: 8, height: 8, borderRadius: 4 },
+rastreioEstadoText:  { fontSize: 15, fontWeight: '700' },
+
+rastreioPosicao: {
+  flexDirection: 'row', backgroundColor: Colors.dark3,
+  borderRadius: 12, padding: 14, marginBottom: 16, alignItems: 'center',
+},
+rastreioPosicaoItem: { flex: 1, alignItems: 'center' },
+rastreioPosicaoNum:  { fontSize: 22, fontWeight: '800', color: Colors.white, marginBottom: 3 },
+rastreioPosicaoLabel:{ fontSize: 10, color: Colors.muted },
+rastreioDivider:     { width: 1, height: 36, backgroundColor: 'rgba(255,255,255,0.07)' },
+
+chamadoAlerta: {
+  flexDirection: 'row', alignItems: 'center', gap: 12,
+  backgroundColor: 'rgba(232,180,75,0.1)', borderWidth: 1,
+  borderColor: 'rgba(232,180,75,0.3)', borderRadius: 12,
+  padding: 14, marginBottom: 16,
+},
+chamadoAlertaTitulo: { fontSize: 15, fontWeight: '800', color: Colors.gold, marginBottom: 3 },
+chamadoAlertaSub:    { fontSize: 12, color: Colors.muted },
+
+rastreioTimeline: { marginVertical: 8 },
+
+cancelarSenhaBtn: { marginTop: 12, alignItems: 'center', padding: 10 },
+cancelarSenhaBtnText: { fontSize: 12, color: Colors.muted, textDecorationLine: 'underline' },
 })
