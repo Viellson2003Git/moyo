@@ -16,7 +16,8 @@
       "package": "com.viellson2003.moyo"
     },
     "plugins": [
-      "expo-sharing"
+      "expo-sharing",
+      "expo-font"
     ],
     "extra": {
       "eas": {
