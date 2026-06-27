@@ -2,28 +2,63 @@
   "expo": {
     "name": "Moyo",
     "slug": "moyo",
+    "version": "1.0.1",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
     "icon": "./assets/icon.png",
-
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0D0D0F"
+    },
     "android": {
+      "package": "ao.moyo.app",
+      "versionCode": 5,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0D0D0F"
       },
-      "package": "com.viellson2003.moyo"
+      "permissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.VIBRATE",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
     },
-
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/favicon.png"
+    },
     "plugins": [
       "expo-sharing",
-      "expo-font",
-      "expo-splash-screen"
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "O Moyo precisa da câmara para escanear QR Codes dos cartões de doador."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "O Moyo precisa da localização para mostrar hospitais e ONGs próximos."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "O Moyo precisa de acesso à galeria para partilhar publicações.",
+          "cameraPermission": "O Moyo precisa da câmara para fotos."
+        }
+      ]
     ],
-
     "extra": {
       "eas": {
         "projectId": "e9729c26-4593-4a41-9047-2e7237f5958d"
       }
     },
-
     "owner": "viellson2003"
   }
 }

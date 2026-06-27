@@ -11,7 +11,7 @@ import { supabase } from '../../lib/supabase'
 import { Colors } from '../../constants/colors'
 import { mostrarAlerta } from '../../utils/alert'
 import BottomNav from '../../components/BottomNav'
-
+import { useSafeTop } from '../../hooks/useSafeTop'
 type Post = {
   id: string
   ong_id: string | null
@@ -42,7 +42,7 @@ const REACAO_EMOJIS = [
 export default function Feed() {
   const { width } = useWindowDimensions()
   const isWeb = Platform.OS === 'web' && width > 900
-
+  const safeTop = useSafeTop()
   const [posts, setPosts]         = useState<Post[]>([])
   const [loading, setLoading]     = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -154,7 +154,7 @@ export default function Feed() {
       {isWeb && <SidebarWeb />}
       <View style={s.main}>
 
-        <View style={s.topbar}>
+        <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
           <Text style={s.topbarLogo}>MO<Text style={{ color: Colors.redSoft }}>YO</Text></Text>
           <Text style={s.topbarTitle}>Feed</Text>
           <View style={{ flex: 1 }} />

@@ -11,6 +11,8 @@ import { supabase } from '../../lib/supabase'
 import { Colors } from '../../constants/colors'
 import BottomNav from '../../components/BottomNav'
 import { useProvinciaDoUser } from '../../hooks/useProvincia'
+import { useSafeTop } from '../../hooks/useSafeTop'
+
 type Slot = {
   id: string
   data: string
@@ -50,6 +52,8 @@ export default function Agendar() {
   const [agendando, setAgendando] = useState<string | null>(null)
   const [voluntarioId, setVoluntarioId] = useState<string | null>(null)
   const [isApto, setIsApto]       = useState(false)
+
+  const safeTop = useSafeTop()
 
   useEffect(() => { loadInicial() }, [])
   useEffect(() => { if (voluntarioId) loadSlots() }, [mes, ano, bancoSel, voluntarioId])
@@ -184,7 +188,7 @@ async function loadSlots() {
       <View style={s.main}>
 
         {/* Topbar */}
-        <View style={s.topbar}>
+        <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
           <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
             <Feather name="arrow-left" size={20} color={Colors.white} />
           </TouchableOpacity>

@@ -11,6 +11,8 @@ import { supabase } from '../../lib/supabase'
 import { Colors } from '../../constants/colors'
 import { mostrarAlerta } from '../../utils/alert'
 import { enviarPushUrgente } from '../../utils/sendPush'
+import { SafeAreaView } from 'react-native-safe-area-context'
+import { obterLocalizacao, obterMorada } from '../../utils/location'
 
 const TIPOS_SANG = ['O-', 'O+', 'A-', 'A+', 'B-', 'B+', 'AB-', 'AB+']
 
@@ -48,35 +50,23 @@ export default function Emergencia() {
   const [portalLoading, setPortalLoading] = useState(false)
 
   async function capturarLocalizacao() {
-    setLocLoading(true)
-    if (Platform.OS === 'web') {
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          const lat = pos.coords.latitude
-          const lng = pos.coords.longitude
-          setLatitude(lat)
-          setLongitude(lng)
-          try {
-            const res = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`
-            )
-            const data = await res.json()
-            const addr = data.address
-            const m = [addr.road, addr.suburb, addr.city || addr.town || addr.village]
-              .filter(Boolean).join(', ')
-            setMorada(m || `${lat.toFixed(4)}, ${lng.toFixed(4)}`)
-          } catch {
-            setMorada(`${lat.toFixed(4)}, ${lng.toFixed(4)}`)
-          }
-          setLocLoading(false)
-        },
-        () => { setLocLoading(false); mostrarAlerta('Negado', 'Escreve a morada manualmente.') },
-        { timeout: 10000 }
-      )
-    } else {
-      setLocLoading(false)
+  setLocLoading(true)
+  try {
+    const coords = await obterLocalizacao()
+    if (!coords) {
+      mostrarAlerta('Permissão negada', 'Não foi possível obter a localização. Escreve a morada manualmente.')
+      return
     }
+    setLatitude(coords.latitude)
+    setLongitude(coords.longitude)
+    const m = await obterMorada(coords.latitude, coords.longitude)
+    setMorada(m)
+  } catch (e: any) {
+    mostrarAlerta('Erro', e.message || 'Falha ao obter localização.')
+  } finally {
+    setLocLoading(false)
   }
+}
 
   async function loadPortal(id: string) {
     setPortalLoading(true)
@@ -193,7 +183,7 @@ useEffect(() => {
   }
 
   return (
-    <View style={s.root}>
+    <SafeAreaView style={s.root} edges={['top']}>
       <View style={s.bgGlow} />
 
       {/* Header */}
@@ -457,7 +447,7 @@ useEffect(() => {
 
         </View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   )
 }
 

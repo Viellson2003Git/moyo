@@ -13,6 +13,7 @@ import { mostrarAlerta } from '../../utils/alert'
 import BottomNavComponent from '../../components/BottomNav'
 import { useProvinciaDoUser } from '../../hooks/useProvincia'
 import { useAcesso } from '../../hooks/useAcesso'
+  import { useSafeTop } from '../../hooks/useSafeTop'
 type Campanha = {
   id: string
   titulo: string
@@ -39,6 +40,10 @@ export default function Campanhas() {
   const [loading, setLoading]           = useState(true)
   const [filtro, setFiltro]             = useState<'todas' | 'urgente' | 'campanha' | 'noticia'>('todas')
   const [voluntarioId, setVoluntarioId] = useState<string | null>(null)
+
+
+
+const safeTop = useSafeTop()
 
   useEffect(() => { loadData() }, [])
 
@@ -132,7 +137,7 @@ export default function Campanhas() {
       {isWeb && <SidebarWeb />}
       <View style={s.main}>
 
-        <View style={s.topbar}>
+        <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
           <TouchableOpacity onPress={() => router.back()} style={{ padding: 8 }}>
             <Feather name="arrow-left" size={20} color={Colors.white} />
           </TouchableOpacity>

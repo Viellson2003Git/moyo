@@ -13,7 +13,8 @@ import { Colors } from '../../constants/colors'
 import BottomNav from '../../components/BottomNav'
 import { mostrarAlerta } from '../../utils/alert'
 import { limparTelefoneLembrado } from '../../utils/session'
-
+import { SafeAreaView } from 'react-native-safe-area-context'
+import { useSafeTop } from '../../hooks/useSafeTop'
 
 
 type Stats = {
@@ -43,7 +44,7 @@ export default function AdminDashboard() {
   const [candidatos, setCandidatos] = useState<Candidato[]>([])
   const [loading, setLoading]       = useState(true)
   const [activeTab, setActiveTab]   = useState<'dashboard' | 'candidatos' | 'slots'| 'utilizadores' | 'ongs' | 'campanhas' | 'emergencias' | 'relatorios'>('dashboard')
-
+  const safeTop = useSafeTop()
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
@@ -108,7 +109,7 @@ const navItems = [
 ] as { icon: keyof typeof Feather.glyphMap; label: string; tab: typeof activeTab }[]
 
   return (
-    <View style={s.root}>
+    <SafeAreaView style={s.root} edges={['top']}>
 
       {/* ── SIDEBAR WEB ── */}
       {isWeb && (
@@ -147,7 +148,7 @@ const navItems = [
       <View style={s.main}>
 
         {/* Topbar */}
-        <View style={s.topbar}>
+        <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
           <Text style={s.topbarTitle}>
             {activeTab === 'dashboard'    ? 'Painel Admin'    :
             activeTab === 'candidatos'   ? 'Candidatos'      :
@@ -320,7 +321,7 @@ const navItems = [
         ]} />
       )}
       </View>
-    </View>
+    </SafeAreaView>
   )
 }
 

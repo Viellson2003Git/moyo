@@ -10,6 +10,8 @@ import { Feather } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { Colors } from '../../constants/colors'
 import { mostrarAlerta } from '../../utils/alert'
+import { useSafeTop } from '../../hooks/useSafeTop'
+import { SafeAreaView } from 'react-native-safe-area-context'
 
 const TIPOS_SANGUE = ['A+','A-','B+','B-','AB+','AB-','O+','O-']
 
@@ -46,6 +48,8 @@ export default function Exames() {
   const [pressao, setPressao]             = useState('')
   const [peso, setPeso]                   = useState('')
   const [observacoes, setObservacoes]     = useState('')
+
+  const safeTop = useSafeTop()
 
   useEffect(() => { loadData() }, [])
 
@@ -166,8 +170,8 @@ export default function Exames() {
   const est = estadoCfg[voluntario.estado] || estadoCfg['pendente']
 
   return (
-    <View style={s.root}>
-      <View style={s.topbar}>
+    <SafeAreaView style={s.root} edges={['top']}>
+      <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
         <TouchableOpacity onPress={() => router.back()} style={{ padding: 8 }}>
           <Feather name="arrow-left" size={20} color={Colors.white} />
         </TouchableOpacity>
@@ -452,7 +456,7 @@ export default function Exames() {
 
         </View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   )
 }
 

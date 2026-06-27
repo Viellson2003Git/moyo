@@ -9,6 +9,7 @@ import { router, useLocalSearchParams } from 'expo-router'
 import { Feather } from '@expo/vector-icons'
 import { supabase } from '../../../lib/supabase'
 import { Colors } from '../../../constants/colors'
+import { useSafeTop } from '../../../hooks/useSafeTop'
 
 type Voluntario = {
   id: string
@@ -50,6 +51,8 @@ export default function DetalheCandidato() {
   const [peso, setPeso]               = useState('')
   const [resultado, setResultado]     = useState<'apto' | 'inapto_temp' | 'inapto_perm' | null>(null)
   const [salvando, setSalvando]       = useState(false)
+
+  const safeTop = useSafeTop()
 
   useEffect(() => { loadData() }, [id])
 
@@ -165,7 +168,7 @@ export default function DetalheCandidato() {
       <View style={s.main}>
 
         {/* Topbar */}
-        <View style={s.topbar}>
+        <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
           <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
             <Feather name="arrow-left" size={20} color={Colors.white} />
           </TouchableOpacity>

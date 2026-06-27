@@ -16,6 +16,8 @@ import { usePushNotifications } from '../../hooks/usePushNotifications'
 import { useAcesso } from '../../hooks/useAcesso'
 import { limparTelefoneLembrado } from '../../utils/session'
 import { mostrarAlerta, confirmar } from '../../utils/alert'
+import { SafeAreaView } from 'react-native-safe-area-context'
+import { useSafeTop } from '../../hooks/useSafeTop'
 
 type Profile     = { nome: string; email: string }
 type Voluntario  = { id: string; 
@@ -32,7 +34,7 @@ export default function VoluntarioDashboard() {
   const { width }              = useWindowDimensions()
   const isWeb                  = Platform.OS === 'web' && width > 900
 
-
+  const safeTop = useSafeTop()
   const [userId,     setUserId]     = useState<string>('')
   const [profile,    setProfile]    = useState<Profile | null>(null)
   const [voluntario, setVoluntario] = useState<Voluntario | null>(null)
@@ -252,7 +254,7 @@ useEffect(() => {
 
   // ── render ─────────────────────────────────────────────────────────────────
   return (
-    <View style={s.root}>
+    <SafeAreaView style={s.root} edges={['top']}>
 
       {/* ════════ SIDEBAR WEB ════════ */}
       {isWeb && (
@@ -311,7 +313,7 @@ useEffect(() => {
       <View style={s.main}>
 
         {/* Topbar */}
-        <View style={s.topbar}>
+        <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
           {!isWeb && (
             <Text style={s.topbarLogo}>
               MO<Text style={{ color: Colors.redSoft }}>YO</Text>
@@ -937,11 +939,9 @@ useEffect(() => {
           ]} />
         )}
       </View>
-    </View>
+    </SafeAreaView>
   )
 }
-
-// ── Componentes ──────────────────────────────────────────────────────────────
 
 function AccaoCard({
   icon, label, onPress, disabled = false,

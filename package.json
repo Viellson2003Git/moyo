@@ -15,6 +15,7 @@
     "expo-font": "~56.0.7",
     "expo-image-picker": "~56.0.18",
     "expo-linking": "~56.0.13",
+    "expo-location": "~56.0.18",
     "expo-media-library": "~56.0.7",
     "expo-notifications": "~56.0.18",
     "expo-print": "~56.0.3",
@@ -34,7 +35,8 @@
     "react-native-svg": "15.15.4",
     "react-native-url-polyfill": "^3.0.0",
     "react-native-view-shot": "5.1.0",
-    "react-native-web": "^0.21.2"
+    "react-native-web": "^0.21.2",
+    "react-native-webview": "13.16.1"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",

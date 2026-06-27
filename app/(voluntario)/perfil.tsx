@@ -10,11 +10,12 @@ import { Feather } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { Colors } from '../../constants/colors'
 import { limparTelefoneLembrado } from '../../utils/session'
+import { useSafeTop } from '../../hooks/useSafeTop'
 
 export default function Perfil() {
   const { width } = useWindowDimensions()
   const isWeb = Platform.OS === 'web' && width > 900
-
+  const safeTop = useSafeTop()
   const [loading, setLoading]   = useState(true)
   const [saving, setSaving]     = useState(false)
   const [editMode, setEditMode] = useState(false)
@@ -100,7 +101,7 @@ export default function Perfil() {
       {isWeb && <SidebarWeb />}
       <View style={s.main}>
 
-        <View style={s.topbar}>
+        <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
           <TouchableOpacity onPress={() => router.back()} style={{ padding: 8 }}>
             <Feather name="arrow-left" size={20} color={Colors.white} />
           </TouchableOpacity>

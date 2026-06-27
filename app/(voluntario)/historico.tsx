@@ -10,6 +10,7 @@ import { Feather } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { Colors } from '../../constants/colors'
 import BottomNav from '../../components/BottomNav'
+import { useSafeTop } from '../../hooks/useSafeTop'
 type Doacao = {
   id: string
   data_doacao: string
@@ -29,7 +30,7 @@ type Agendamento = {
 export default function Historico() {
   const { width } = useWindowDimensions()
   const isWeb = Platform.OS === 'web' && width > 900
-
+  const safeTop = useSafeTop()
   const [doacoes, setDoacoes]         = useState<Doacao[]>([])
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([])
   const [loading, setLoading]         = useState(true)
@@ -117,7 +118,7 @@ export default function Historico() {
       <View style={s.main}>
 
         {/* Topbar */}
-        <View style={s.topbar}>
+        <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
           <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
             <Feather name="arrow-left" size={20} color={Colors.white} />
           </TouchableOpacity>

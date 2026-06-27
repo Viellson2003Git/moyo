@@ -7,7 +7,7 @@ import {
 import { router } from 'expo-router'
 import { Feather } from '@expo/vector-icons'
 import { Colors } from '../../constants/colors'
-
+import { useSafeTop } from '../../hooks/useSafeTop'
 const ARTIGOS = [
   {
     id: '1', emoji: '🩸', categoria: 'Básico',
@@ -57,7 +57,7 @@ export default function Educacao() {
   const { width } = useWindowDimensions()
   const isWeb = Platform.OS === 'web' && width > 900
   const [artigoAberto, setArtigoAberto] = useState<typeof ARTIGOS[0] | null>(null)
-
+  const safeTop = useSafeTop()
   // Número de colunas do grid
   const numCols = isWeb ? 3 : 2
 
@@ -67,7 +67,7 @@ export default function Educacao() {
       <View style={s.main}>
 
         {/* Topbar */}
-        <View style={s.topbar}>
+        <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
           <TouchableOpacity onPress={() => router.back()} style={{ padding: 8 }}>
             <Feather name="arrow-left" size={20} color={Colors.white} />
           </TouchableOpacity>

@@ -97,7 +97,7 @@ function ScannerMobile({ onScanned, onFechar, titulo }: Props) {
           <View style={s.overlayEdge} />
         </View>
 
-        <View style={s.topBar}>
+        <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
           {onFechar && (
             <TouchableOpacity style={s.topBarBtn} onPress={onFechar}>
               <Feather name="x" size={22} color={Colors.white} />
@@ -348,7 +348,7 @@ return (
           <View style={s.overlayEdge} />
         </View>
 
-        <View style={s.topBar}>
+        <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
           {onFechar && (
             <TouchableOpacity style={s.topBarBtn} onPress={onFechar}>
               <Feather name="x" size={22} color={Colors.white} />

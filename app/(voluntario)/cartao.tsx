@@ -12,6 +12,7 @@ import { Colors } from '../../constants/colors'
 import { mostrarAlerta } from '../../utils/alert'
 import BottomNav from '../../components/BottomNav'
 import { Image } from 'react-native'
+import { useSafeTop } from '../../hooks/useSafeTop'
 
 import * as MediaLibrary from 'expo-media-library'
 import { captureRef } from 'react-native-view-shot'
@@ -47,7 +48,7 @@ export default function Cartao() {
   const [loading, setLoading] = useState(true)
   const [baixando, setBaixando] = useState(false)
   const cartaoRef = useRef<any>(null)
-
+const safeTop = useSafeTop()
   const [exames, setExames] = useState<any[]>([])
 
 // No loadVoluntario, após buscar o voluntário:
@@ -218,7 +219,7 @@ export default function Cartao() {
 
   return (
     <View style={s.root}>
-      <View style={s.topbar}>
+      <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
         <TouchableOpacity onPress={() => router.back()} style={{ padding: 8 }}>
           <Feather name="arrow-left" size={20} color={Colors.white} />
         </TouchableOpacity>

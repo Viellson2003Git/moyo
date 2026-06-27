@@ -11,7 +11,7 @@ import { supabase } from '../../lib/supabase'
 import { Colors } from '../../constants/colors'
 import { mostrarAlerta, confirmar } from '../../utils/alert'
 import QRScanner from '../../components/QRScanner'
-
+import { SafeAreaView } from 'react-native-safe-area-context'
 type Aba = 'rastreio' | 'doacao' | 'consultar' | 'agenda'
 
 export default function EnfermeiroDashboard() {
@@ -248,7 +248,7 @@ export default function EnfermeiroDashboard() {
   ]
 
   return (
-    <View style={s.root}>
+    <SafeAreaView style={s.root} edges={['top']}>
 
       {/* ── HEADER ── */}
       <View style={s.header}>
@@ -494,7 +494,7 @@ export default function EnfermeiroDashboard() {
           />
         </View>
       )}
-    </View>
+    </SafeAreaView>
   )
 }
 

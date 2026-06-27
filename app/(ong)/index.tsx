@@ -12,6 +12,9 @@ import { Colors } from '../../constants/colors'
 import { mostrarAlerta, confirmar } from '../../utils/alert'
 import * as DocumentPicker from 'expo-document-picker'
 import * as ImagePicker from 'expo-image-picker'
+import { SafeAreaView } from 'react-native-safe-area-context'
+import { useSafeTop } from '../../hooks/useSafeTop'
+import { obterLocalizacao } from '../../utils/location'
 
 type Aba = 'dashboard' | 'membros' | 'campanhas' | 'documentos' | 'perfil' | 'publicacoes' | 'adicionar'
 
@@ -22,7 +25,7 @@ export default function OngDashboard() {
   const [searchResult, setSearchResult]   = useState<any>(null)
   const [searchLoading, setSearchLoading] = useState(false)
   const [adicionando, setAdicionando]     = useState(false)
-
+  const safeTop = useSafeTop()
   const { width } = useWindowDimensions()
   const isWeb = Platform.OS === 'web' && width > 900
 
@@ -380,17 +383,21 @@ async function loadData() {
   }
 
   async function capturarLocalizacao() {
-    if (Platform.OS !== 'web') { mostrarAlerta('Indisponível', 'Só disponível no web.'); return }
-    setLocLoading(true)
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        setLatitude(pos.coords.latitude.toFixed(6))
-        setLongitude(pos.coords.longitude.toFixed(6))
-        setLocLoading(false)
-      },
-      () => { mostrarAlerta('Erro', 'Não foi possível obter localização.'); setLocLoading(false) }
-    )
+  setLocLoading(true)
+  try {
+    const coords = await obterLocalizacao()
+    if (!coords) {
+      mostrarAlerta('Permissão negada', 'Não foi possível obter a localização.')
+      return
+    }
+    setLatitude(coords.latitude.toFixed(6))
+    setLongitude(coords.longitude.toFixed(6))
+  } catch (e: any) {
+    mostrarAlerta('Erro', e.message)
+  } finally {
+    setLocLoading(false)
   }
+}
 
   async function criarCampanha() {
     if (!campTitulo.trim()) { mostrarAlerta('Atenção', 'O título é obrigatório.'); return }
@@ -446,7 +453,7 @@ async function loadData() {
   const estCfg = estadoCfg[estadoOng] || estadoCfg['pendente']
 
   return (
-    <View style={s.root}>
+    <SafeAreaView style={s.root} edges={['top']}>
 
       {/* ── SIDEBAR WEB ── */}
       {isWeb && (
@@ -504,7 +511,7 @@ async function loadData() {
       <View style={s.main}>
 
         {/* ── TOPBAR ── */}
-        <View style={s.topbar}>
+        <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
           {!isWeb && (
             <View style={{ flex: 1 }}>
               <Text style={s.topbarTitle} numberOfLines={1}>{ong.nome}</Text>
@@ -1361,7 +1368,7 @@ async function loadData() {
         </View>
       </Modal>
 
-    </View>
+    </SafeAreaView>
   )
 
  
