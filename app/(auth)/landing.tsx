@@ -8,6 +8,9 @@ import { router } from 'expo-router'
 import { Feather } from '@expo/vector-icons'
 import { Colors } from '../../constants/colors'
 import { Image } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
+import { ARTIGOS } from '../../data/artigos'
+
 
 export default function Landing() {
   const [modalAberto, setModalAberto] = useState<string | null>(null)
@@ -22,48 +25,7 @@ export default function Landing() {
   const [showProvSel, setShowProvSel]     = useState(false)
 
   
-  const ARTIGOS_EDUCACAO = [
-    {
-      id: '1',
-      emoji: '🩸',
-      titulo: 'Quem pode doar sangue?',
-      resumo: 'Tens entre 18 e 65 anos, peso acima de 50kg e boa saúde? Podes ser doador. Descobre todos os critérios.',
-      cor: Colors.red,
-      bg: 'rgba(232,23,58,0.08)',
-      tempo: '3 min',
-      tag: 'Elegibilidade',
-    },
-    {
-      id: '2',
-      emoji: '💉',
-      titulo: 'O que acontece no dia da doação?',
-      resumo: 'Do registo ao lanche final — um guia passo a passo para saberes exactamente o que esperar.',
-      cor: Colors.blue,
-      bg: 'rgba(74,158,255,0.08)',
-      tempo: '5 min',
-      tag: 'Processo',
-    },
-    {
-      id: '3',
-      emoji: '🥗',
-      titulo: 'O que comer antes de doar?',
-      resumo: 'Hidrata-te bem, evita gorduras e faz uma refeição leve. Os detalhes que fazem a diferença.',
-      cor: Colors.green,
-      bg: 'rgba(46,204,113,0.08)',
-      tempo: '2 min',
-      tag: 'Preparação',
-    },
-    {
-      id: '4',
-      emoji: '❤️‍🩹',
-      titulo: 'Mitos e verdades sobre a doação',
-      resumo: '"Dói muito", "fica fraco uma semana" — desvendamos os mitos mais comuns sobre doar sangue.',
-      cor: Colors.gold,
-      bg: 'rgba(232,180,75,0.08)',
-      tempo: '4 min',
-      tag: 'Desmistificar',
-    },
-  ]
+  
 
   // ── TABELA DE COMPATIBILIDADE ──
   const COMPATIBILIDADE = [
@@ -86,7 +48,7 @@ export default function Landing() {
   }, [])
 
   return (
-    <View style={s.root}>
+    <SafeAreaView style={s.root} edges={['top']}>
       <View style={s.bgGlow1} />
       <View style={s.bgGlow2} />
 
@@ -232,11 +194,14 @@ export default function Landing() {
           <Text style={s.sectionSub}>Artigos curtos e claros sobre doação de sangue</Text>
 
           <View style={[s.educGrid, isWeb && s.educGridWeb]}>
-            {ARTIGOS_EDUCACAO.map(a => (
+            {ARTIGOS.map(a => (
               <TouchableOpacity
                 key={a.id}
                 style={[s.educCard, { borderColor: a.cor + '30' }]}
-                onPress={() => router.push('/(auth)/login' as any)}
+                onPress={() => router.push({
+                  pathname: '/(auth)/artigo',
+                  params: { id: a.id }
+                } as any)}
                 activeOpacity={0.8}
               >
                 <View style={[s.educCardIcon, { backgroundColor: a.bg }]}>
@@ -428,7 +393,7 @@ export default function Landing() {
     </View>
   </TouchableOpacity>
 )}
-    </View>
+    </SafeAreaView>
   )
 }
 

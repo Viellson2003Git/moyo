@@ -10,9 +10,10 @@ import { Feather } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { Colors } from '../../constants/colors'
 import { mostrarAlerta } from '../../utils/alert'
-import BottomNav from '../../components/BottomNav'
+
 import { Image } from 'react-native'
-import { useSafeTop } from '../../hooks/useSafeTop'
+
+import { SafeAreaView } from 'react-native-safe-area-context'
 
 import * as MediaLibrary from 'expo-media-library'
 import { captureRef } from 'react-native-view-shot'
@@ -48,7 +49,7 @@ export default function Cartao() {
   const [loading, setLoading] = useState(true)
   const [baixando, setBaixando] = useState(false)
   const cartaoRef = useRef<any>(null)
-const safeTop = useSafeTop()
+
   const [exames, setExames] = useState<any[]>([])
 
 // No loadVoluntario, após buscar o voluntário:
@@ -218,8 +219,8 @@ const safeTop = useSafeTop()
   const qrValue = vol.numero_serial
 
   return (
-    <View style={s.root}>
-      <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
+    <SafeAreaView style={s.root} edges={['top']}>
+      <View style={[s.topbar]}>
         <TouchableOpacity onPress={() => router.back()} style={{ padding: 8 }}>
           <Feather name="arrow-left" size={20} color={Colors.white} />
         </TouchableOpacity>
@@ -478,16 +479,7 @@ const safeTop = useSafeTop()
         </View>
 
     </ScrollView>
-
-
-      <BottomNav items={[
-        { icon: 'grid',        label: 'Início',    route: '/(voluntario)'           },
-        { icon: 'rss',         label: 'Feed',      route: '/(voluntario)/feed'      },
-        { icon: 'calendar',    label: 'Agendar',   route: '/(voluntario)/agendar'   },
-        { icon: 'users',       label: 'ONGs',      route: '/(voluntario)/ongs'      },
-        { icon: 'user',        label: 'Perfil',    route: '/(voluntario)/perfil'    },
-      ]} />
-    </View>
+    </SafeAreaView>
   )
 }
 

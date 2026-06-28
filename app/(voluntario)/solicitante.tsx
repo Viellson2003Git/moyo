@@ -11,7 +11,9 @@ import { supabase } from '../../lib/supabase'
 import { Colors } from '../../constants/colors'
 import { mostrarAlerta } from '../../utils/alert'
 import BottomNav from '../../components/BottomNav'
-import { useSafeTop } from '../../hooks/useSafeTop'
+
+import { SafeAreaView } from 'react-native-safe-area-context'
+
 
 export default function Solicitante() {
   const { width } = useWindowDimensions()
@@ -21,7 +23,7 @@ export default function Solicitante() {
   const [loading, setLoading]     = useState(true)
   const [activeTab, setActiveTab] = useState<'meus' | 'novo'>('meus')
   const [userId, setUserId]       = useState<string | null>(null)
-  const safeTop = useSafeTop()
+
 
   useEffect(() => {
     async function init() {
@@ -98,10 +100,10 @@ export default function Solicitante() {
   )
 
   return (
-    <View style={s.root}>
+    <SafeAreaView style={s.root} edges={['top']}>
       <View style={s.main}>
 
-        <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
+        <View style={[s.topbar]}>
           <TouchableOpacity onPress={() => router.back()} style={{ padding: 8 }}>
             <Feather name="arrow-left" size={20} color={Colors.white} />
           </TouchableOpacity>
@@ -266,7 +268,7 @@ export default function Solicitante() {
           ]} />
         )}
       </View>
-    </View>
+    </SafeAreaView>
   )
 }
 

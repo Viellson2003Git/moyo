@@ -13,7 +13,7 @@ import { mostrarAlerta, confirmar } from '../../utils/alert'
 import * as DocumentPicker from 'expo-document-picker'
 import * as ImagePicker from 'expo-image-picker'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useSafeTop } from '../../hooks/useSafeTop'
+import { Image } from 'react-native'
 import { obterLocalizacao } from '../../utils/location'
 
 type Aba = 'dashboard' | 'membros' | 'campanhas' | 'documentos' | 'perfil' | 'publicacoes' | 'adicionar'
@@ -25,7 +25,7 @@ export default function OngDashboard() {
   const [searchResult, setSearchResult]   = useState<any>(null)
   const [searchLoading, setSearchLoading] = useState(false)
   const [adicionando, setAdicionando]     = useState(false)
-  const safeTop = useSafeTop()
+
   const { width } = useWindowDimensions()
   const isWeb = Platform.OS === 'web' && width > 900
 
@@ -70,7 +70,10 @@ export default function OngDashboard() {
   const [pubTipo, setPubTipo]               = useState('post')
   const [criandoPub, setCriandoPub]         = useState(false)
 
-const [searchErro, setSearchErro]       = useState('')
+  const [searchErro, setSearchErro]       = useState('')
+
+  const [imagemUri, setImagemUri] = useState<string | null>(null)
+  const [mediaMode, setMediaMode] = useState<'none' | 'imagem' | 'video'>('none')
 
   
 
@@ -153,17 +156,86 @@ async function adicionarMembro(voluntario: any) {
   setAdicionando(false)
 }
 
-  async function escolherVideo() {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-      quality: 0.8,
-      videoMaxDuration: 120, // máx 2 minutos
-    })
-    if (!result.canceled && result.assets[0]) {
-      setVideoUri(result.assets[0].uri)
-      setVideoNome(result.assets[0].fileName || `video_${Date.now()}.mp4`)
-    }
+ async function escolherImagem() {
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    quality: 0.85,
+    allowsEditing: true,
+  })
+  if (!result.canceled && result.assets[0]) {
+    setImagemUri(result.assets[0].uri)
   }
+}
+
+async function escolherVideo() {
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+    quality: 0.8,
+    videoMaxDuration: 120,
+  })
+  if (!result.canceled && result.assets[0]) {
+    setVideoUri(result.assets[0].uri)
+    setVideoNome(result.assets[0].fileName || `video_${Date.now()}.mp4`)
+  }
+}
+
+async function uploadImagem(): Promise<string | null> {
+  if (!imagemUri) return null
+  setUploadando(true)
+  try {
+    const response = await fetch(imagemUri)
+    const blob = await response.blob()
+    const ext = imagemUri.split('.').pop()?.split('?')[0] || 'jpg'
+    const caminho = `ongs/${ong.id}/${Date.now()}_imagem.${ext}`
+    const { error } = await supabase.storage
+      .from('publicacoes')
+      .upload(caminho, blob, { contentType: `image/${ext}`, upsert: false })
+    if (error) { mostrarAlerta('Erro', 'Falha no upload da imagem.'); setUploadando(false); return null }
+    const { data } = supabase.storage.from('publicacoes').getPublicUrl(caminho)
+    setUploadando(false)
+    return data.publicUrl
+  } catch { setUploadando(false); return null }
+}
+
+async function criarPublicacao() {
+  if (!pubConteudo.trim()) { mostrarAlerta('Atenção', 'O conteúdo é obrigatório.'); return }
+  setCriandoPub(true)
+
+  let videoUrl: string | null = null
+  let imagemUrl: string | null = null
+
+  if (mediaMode === 'video' && videoUri) {
+    videoUrl = await uploadVideo()
+    if (!videoUrl) { setCriandoPub(false); return }
+  }
+  if (mediaMode === 'imagem' && imagemUri) {
+    imagemUrl = await uploadImagem()
+    if (!imagemUrl) { setCriandoPub(false); return }
+  }
+
+  const { error } = await supabase.from('publicacoes').insert({
+    ong_id: ong.id,
+    autor_id: (await supabase.auth.getUser()).data.user?.id,
+    tipo: pubTipo,
+    titulo: pubTitulo.trim() || null,
+    conteudo: pubConteudo.trim(),
+    video_url: videoUrl,
+    imagem_url: imagemUrl,
+    e_global: false,
+    total_reacoes: 0,
+  })
+
+  if (error) mostrarAlerta('Erro', error.message)
+  else {
+    mostrarAlerta('✅ Publicado!', 'Os teus seguidores já podem ver.')
+    setShowNovaPublicacao(false)
+    setPubTitulo(''); setPubConteudo(''); setPubTipo('post')
+    setVideoUri(null); setVideoNome(null)
+    setImagemUri(null); setMediaMode('none')
+    loadData()
+  }
+  setCriandoPub(false)
+}
 
   async function uploadVideo(): Promise<string | null> {
     if (!videoUri || !videoNome) return null
@@ -190,43 +262,7 @@ async function adicionarMembro(voluntario: any) {
     }
   }
 
-
-  async function criarPublicacao() {
-    if (!pubConteudo.trim()) { mostrarAlerta('Atenção', 'O conteúdo é obrigatório.'); return }
-    setCriandoPub(true)
-
-    let videoUrl = null
-    if (videoUri) {
-      videoUrl = await uploadVideo()
-      if (!videoUrl) { setCriandoPub(false); return }
-    }
-
-    const { error } = await supabase.from('publicacoes').insert({
-      ong_id: ong.id,
-      autor_id: (await supabase.auth.getUser()).data.user?.id,
-      tipo: pubTipo,
-      titulo: pubTitulo.trim() || null,
-      conteudo: pubConteudo.trim(),
-      video_url: videoUrl,
-      e_global: false,
-      total_reacoes: 0,
-    })
-    if (error) mostrarAlerta('Erro', error.message)
-    else {
-      mostrarAlerta('✅ Publicado!', 'Os teus seguidores já podem ver.')
-      setShowNovaPublicacao(false)
-      setPubTitulo(''); setPubConteudo(''); setPubTipo('post')
-      setVideoUri(null); setVideoNome(null)
-      loadData()
-    }
-    setCriandoPub(false)
-  }
-
   useEffect(() => { loadData() }, [])
-
-  
-
-
 
 async function adicionarMembroDirecto() {
   const vol = searchResult?.[0]
@@ -344,6 +380,15 @@ async function loadData() {
     .order('created_at', { ascending: false })
     .limit(20)
   setNotifs(notifsData || [])
+
+  // Publicações da ONG
+const { data: pubsData } = await supabase
+  .from('publicacoes')
+  .select('id, tipo, titulo, conteudo, imagem_url, video_url, e_global, total_reacoes, total_views, created_at')
+  .eq('ong_id', ongData.id)
+  .order('created_at', { ascending: false })
+  .limit(30)
+setPublicacoes(pubsData || [])
 
   setLoading(false)
 }
@@ -511,7 +556,7 @@ async function loadData() {
       <View style={s.main}>
 
         {/* ── TOPBAR ── */}
-        <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
+        <View style={[s.topbar]}>
           {!isWeb && (
             <View style={{ flex: 1 }}>
               <Text style={s.topbarTitle} numberOfLines={1}>{ong.nome}</Text>
@@ -770,15 +815,44 @@ async function loadData() {
                             {TIPO_PUB_CFG[p.tipo]?.icon} {TIPO_PUB_CFG[p.tipo]?.label}
                           </Text>
                         </View>
-                        <Text style={{ fontSize: 11, color: Colors.muted }}>
+                        {p.e_global && (
+                          <View style={[s.campanhaTipoBadge, { backgroundColor: Colors.redGlow }]}>
+                            <Text style={[s.campanhaTipoText, { color: Colors.redSoft }]}>🌐 Global</Text>
+                          </View>
+                        )}
+                        <Text style={{ fontSize: 11, color: Colors.muted, marginLeft: 'auto' }}>
                           {new Date(p.created_at).toLocaleDateString('pt-PT')}
                         </Text>
                       </View>
+
                       {p.titulo && <Text style={s.campanhaTitulo}>{p.titulo}</Text>}
                       <Text style={s.campanhaDesc} numberOfLines={3}>{p.conteudo}</Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
-                        <Feather name="heart" size={13} color={Colors.muted} />
-                        <Text style={{ fontSize: 12, color: Colors.muted }}>{p.total_reacoes} reacções</Text>
+
+                      {/* Imagem se houver */}
+                      {p.imagem_url && (
+                        <Image
+                          source={{ uri: p.imagem_url }}
+                          style={{ width: '100%', height: 160, borderRadius: 10, marginTop: 10 }}
+                          resizeMode="cover"
+                        />
+                      )}
+
+                      {/* Stats de reacções + views */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                          <Feather name="heart" size={13} color={Colors.redSoft} />
+                          <Text style={{ fontSize: 12, color: Colors.muted }}>{p.total_reacoes}</Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                          <Feather name="eye" size={13} color={Colors.muted2} />
+                          <Text style={{ fontSize: 12, color: Colors.muted }}>{p.total_views}</Text>
+                        </View>
+                        {p.video_url && (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                            <Feather name="video" size={13} color={Colors.purple || '#A855F7'} />
+                            <Text style={{ fontSize: 12, color: Colors.muted }}>Vídeo</Text>
+                          </View>
+                        )}
                       </View>
                     </View>
                   ))
@@ -1143,152 +1217,216 @@ async function loadData() {
       )}
 
       {/* ══════════════ MODAL — NOVA CAMPANHA ══════════════ */}
-      <Modal visible={showNovaCampanha} transparent animationType="slide">
-        <View style={s.modalOverlay}>
-          <View style={[s.modalCard, { maxHeight: '90%' }]}>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <View style={s.modalTopBar}>
-                <Text style={s.modalCardTitle}>Nova Campanha</Text>
-                <TouchableOpacity onPress={() => setShowNovaCampanha(false)} style={{ padding: 6 }}>
-                  <Feather name="x" size={18} color={Colors.muted} />
-                </TouchableOpacity>
-              </View>
+      <Modal visible={showNovaPublicacao} transparent animationType="slide">
+        <View style={pm.overlay}>
+          <View style={pm.sheet}>
 
-              <FormLabel text="TIPO" />
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-                {['campanha', 'urgente', 'noticia'].map(t => (
+            {/* Handle bar */}
+            <View style={pm.handle} />
+
+            {/* Header */}
+            <View style={pm.header}>
+              <Text style={pm.headerTitle}>Nova Publicação</Text>
+              <TouchableOpacity
+                style={pm.closeBtn}
+                onPress={() => {
+                  setShowNovaPublicacao(false)
+                  setPubTitulo(''); setPubConteudo(''); setPubTipo('post')
+                  setVideoUri(null); setVideoNome(null)
+                  setImagemUri(null); setMediaMode('none')
+                }}
+              >
+                <Feather name="x" size={18} color={Colors.muted} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+
+              {/* Tipo */}
+              <Text style={pm.label}>TIPO DE PUBLICAÇÃO</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                {Object.entries(TIPO_PUB_CFG).map(([k, v]) => (
                   <TouchableOpacity
-                    key={t}
-                    style={[s.tipoBtn, campTipo === t && s.tipoBtnActive]}
-                    onPress={() => setCampTipo(t)}
+                    key={k}
+                    style={[pm.tipoChip, pubTipo === k && { backgroundColor: v.cor, borderColor: v.cor }]}
+                    onPress={() => setPubTipo(k)}
                   >
-                    <Text style={[s.tipoBtnText, campTipo === t && { color: Colors.white }]}>
-                      {t === 'campanha' ? '❤️ Campanha' : t === 'urgente' ? '🚨 Urgente' : '📰 Notícia'}
+                    <Text style={{ fontSize: 14 }}>{v.icon}</Text>
+                    <Text style={[pm.tipoChipText, pubTipo === k && { color: Colors.white }]}>
+                      {v.label}
                     </Text>
                   </TouchableOpacity>
                 ))}
-              </View>
+              </ScrollView>
 
-              <FormLabel text="TÍTULO *" />
-              <TextInput style={s.formInput} value={campTitulo} onChangeText={setCampTitulo} placeholder="Título da campanha" placeholderTextColor={Colors.muted2} />
+              {/* Título */}
+              <Text style={pm.label}>TÍTULO <Text style={pm.labelOpt}>(opcional)</Text></Text>
+              <TextInput
+                style={pm.input}
+                value={pubTitulo}
+                onChangeText={setPubTitulo}
+                placeholder="Ex: Campanha de Doação — Julho 2025"
+                placeholderTextColor={Colors.muted2}
+                maxLength={80}
+              />
 
-              <FormLabel text="DESCRIÇÃO" />
-              <TextInput style={[s.formInput, { height: 80, textAlignVertical: 'top' }]} value={campDescricao} onChangeText={setCampDescricao} placeholder="Descreve a campanha..." placeholderTextColor={Colors.muted2} multiline />
+              {/* Conteúdo */}
+              <Text style={pm.label}>MENSAGEM <Text style={{ color: Colors.redSoft }}>*</Text></Text>
+              <TextInput
+                style={pm.textarea}
+                value={pubConteudo}
+                onChangeText={setPubConteudo}
+                placeholder="Escreve aqui a tua mensagem para membros e seguidores..."
+                placeholderTextColor={Colors.muted2}
+                multiline
+                textAlignVertical="top"
+                maxLength={1000}
+              />
+              <Text style={pm.charCount}>{pubConteudo.length}/1000</Text>
 
-              <FormLabel text="TIPO SANGUÍNEO (opcional)" />
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-                {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(t => (
+              {/* Media selector */}
+              <Text style={pm.label}>MÉDIA <Text style={pm.labelOpt}>(opcional)</Text></Text>
+
+              {/* Toggle imagem / vídeo */}
+              {mediaMode === 'none' && (
+                <View style={pm.mediaRow}>
                   <TouchableOpacity
-                    key={t}
-                    style={[s.sangBtn, campTipoSang === t && s.sangBtnActive]}
-                    onPress={() => setCampTipoSang(campTipoSang === t ? '' : t)}
+                    style={pm.mediaBtn}
+                    onPress={async () => { setMediaMode('imagem'); await escolherImagem() }}
                   >
-                    <Text style={[s.sangBtnText, campTipoSang === t && { color: Colors.redSoft }]}>{t}</Text>
+                    <View style={[pm.mediaBtnIcon, { backgroundColor: 'rgba(74,158,255,0.12)' }]}>
+                      <Feather name="image" size={22} color={Colors.blue} />
+                    </View>
+                    <Text style={pm.mediaBtnLabel}>Imagem</Text>
+                    <Text style={pm.mediaBtnSub}>JPG, PNG</Text>
                   </TouchableOpacity>
-                ))}
-              </View>
 
-               <View style={{ flexDirection: 'row', gap: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <FormLabel text="META DE DOADORES" />
-                  <TextInput style={s.formInput} value={campMeta} onChangeText={setCampMeta} placeholder="Ex: 50" placeholderTextColor={Colors.muted2} keyboardType="number-pad" />
+                  <TouchableOpacity
+                    style={pm.mediaBtn}
+                    onPress={async () => { setMediaMode('video'); await escolherVideo() }}
+                  >
+                    <View style={[pm.mediaBtnIcon, { backgroundColor: 'rgba(168,85,247,0.12)' }]}>
+                      <Feather name="video" size={22} color="#A855F7" />
+                    </View>
+                    <Text style={pm.mediaBtnLabel}>Vídeo</Text>
+                    <Text style={pm.mediaBtnSub}>Máx. 2 min</Text>
+                  </TouchableOpacity>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <FormLabel text="DATA FIM" />
-                  <TextInput style={s.formInput} value={campDataFim} onChangeText={setCampDataFim} placeholder="AAAA-MM-DD" placeholderTextColor={Colors.muted2} />
+              )}
+
+              {/* Preview imagem */}
+              {mediaMode === 'imagem' && (
+                <View style={pm.mediaPreviewWrap}>
+                  {imagemUri ? (
+                    <>
+                      <Image
+                        source={{ uri: imagemUri }}
+                        style={pm.imgPreview}
+                        resizeMode="cover"
+                      />
+                      <View style={pm.mediaPreviewActions}>
+                        <TouchableOpacity
+                          style={pm.mediaActionBtn}
+                          onPress={escolherImagem}
+                        >
+                          <Feather name="refresh-cw" size={13} color={Colors.white} />
+                          <Text style={pm.mediaActionText}>Trocar</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[pm.mediaActionBtn, { backgroundColor: 'rgba(232,23,58,0.15)' }]}
+                          onPress={() => { setImagemUri(null); setMediaMode('none') }}
+                        >
+                          <Feather name="trash-2" size={13} color={Colors.redSoft} />
+                          <Text style={[pm.mediaActionText, { color: Colors.redSoft }]}>Remover</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  ) : (
+                    <TouchableOpacity style={pm.mediaPicker} onPress={escolherImagem}>
+                      <Feather name="image" size={28} color={Colors.blue} />
+                      <Text style={[pm.mediaPickerText, { color: Colors.blue }]}>Seleccionar imagem</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
+              )}
+
+              {/* Preview vídeo */}
+              {mediaMode === 'video' && (
+                <View style={pm.mediaPreviewWrap}>
+                  {videoUri ? (
+                    <>
+                      <View style={pm.videoPreviewBox}>
+                        <Feather name="film" size={32} color="#A855F7" />
+                        <View style={{ flex: 1 }}>
+                          <Text style={pm.videoNome} numberOfLines={1}>{videoNome}</Text>
+                          <Text style={pm.videoSub}>Vídeo seleccionado</Text>
+                        </View>
+                        <View style={pm.videoCheckIcon}>
+                          <Feather name="check" size={14} color={Colors.white} />
+                        </View>
+                      </View>
+                      <View style={pm.mediaPreviewActions}>
+                        <TouchableOpacity style={pm.mediaActionBtn} onPress={escolherVideo}>
+                          <Feather name="refresh-cw" size={13} color={Colors.white} />
+                          <Text style={pm.mediaActionText}>Trocar</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[pm.mediaActionBtn, { backgroundColor: 'rgba(232,23,58,0.15)' }]}
+                          onPress={() => { setVideoUri(null); setVideoNome(null); setMediaMode('none') }}
+                        >
+                          <Feather name="trash-2" size={13} color={Colors.redSoft} />
+                          <Text style={[pm.mediaActionText, { color: Colors.redSoft }]}>Remover</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  ) : (
+                    <TouchableOpacity style={pm.mediaPicker} onPress={escolherVideo}>
+                      <Feather name="video" size={28} color="#A855F7" />
+                      <Text style={[pm.mediaPickerText, { color: '#A855F7' }]}>Seleccionar vídeo</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+
+              {/* Upload progress */}
+              {uploadando && (
+                <View style={pm.uploadRow}>
+                  <ActivityIndicator size="small" color={Colors.blue} />
+                  <Text style={pm.uploadText}>A carregar ficheiro...</Text>
+                </View>
+              )}
+
+              {/* Info */}
+              <View style={pm.infoBox}>
+                <Feather name="users" size={14} color={Colors.blue} />
+                <Text style={pm.infoText}>
+                  Esta publicação aparecerá no feed de todos os membros e seguidores da vossa ONG.
+                </Text>
               </View>
 
-
-              <View style={s.dicaBox}>
-                <Feather name="info" size={13} color={Colors.gold} />
-                <Text style={s.dicaText}>A campanha ficará em rascunho até ser aprovada e publicada pelo admin do Moyo.</Text>
-              </View>
-
+              {/* Botão publicar */}
               <TouchableOpacity
-                style={[s.btnSalvar, criandoCamp && { opacity: 0.7 }]}
-                onPress={criarCampanha}
-                disabled={criandoCamp}
+                style={[pm.btnPublicar, (criandoPub || uploadando) && { opacity: 0.6 }]}
+                onPress={criarPublicacao}
+                disabled={criandoPub || uploadando}
               >
-                {criandoCamp ? <ActivityIndicator size="small" color={Colors.white} /> : <Text style={s.btnSalvarText}>Criar Campanha</Text>}
+                {criandoPub ? (
+                  <ActivityIndicator size="small" color={Colors.white} />
+                ) : (
+                  <>
+                    <Feather name="send" size={16} color={Colors.white} />
+                    <Text style={pm.btnPublicarText}>Publicar</Text>
+                  </>
+                )}
               </TouchableOpacity>
+
+              <View style={{ height: 24 }} />
             </ScrollView>
           </View>
         </View>
       </Modal>
 
-      <Modal visible={showNovaPublicacao} transparent animationType="slide">
-      <View style={s.modalOverlay}>
-        <View style={s.modalCard}>
-          <View style={s.modalTopBar}>
-            <Text style={s.modalCardTitle}>Nova Publicação</Text>
-            <TouchableOpacity onPress={() => setShowNovaPublicacao(false)} style={{ padding: 6 }}>
-              <Feather name="x" size={18} color={Colors.muted} />
-            </TouchableOpacity>
-          </View>
-
-          <FormLabel text="TIPO" />
-          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-            {Object.entries(TIPO_PUB_CFG).map(([k, v]) => (
-              <TouchableOpacity
-                key={k}
-                style={[s.tipoBtn, pubTipo === k && s.tipoBtnActive, { minWidth: '22%' }]}
-                onPress={() => setPubTipo(k)}
-              >
-                <Text style={[s.tipoBtnText, pubTipo === k && { color: Colors.white }]}>
-                  {v.icon} {v.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <FormLabel text="TÍTULO (opcional)" />
-          <TextInput style={s.formInput} value={pubTitulo} onChangeText={setPubTitulo} placeholder="Título..." placeholderTextColor={Colors.muted2} />
-
-          <FormLabel text="CONTEÚDO *" />
-          <TextInput
-            style={[s.formInput, { height: 120, textAlignVertical: 'top' }]}
-            value={pubConteudo} onChangeText={setPubConteudo}
-            placeholder="Escreve a tua mensagem para membros e seguidores..."
-            placeholderTextColor={Colors.muted2}
-            multiline
-          />
-
-          {/* Após o campo de conteúdo */}
-          <FormLabel text="VÍDEO (opcional, máx. 2 min)" />
-          {!videoUri ? (
-            <TouchableOpacity style={s.videoPickerBtn} onPress={escolherVideo}>
-              <Feather name="video" size={20} color={Colors.muted} />
-              <Text style={s.videoPickerText}>Seleccionar vídeo da galeria</Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={s.videoPreview}>
-              <Feather name="check-circle" size={16} color={Colors.green} />
-              <Text style={s.videoPreviewText} numberOfLines={1}>{videoNome}</Text>
-              <TouchableOpacity onPress={() => { setVideoUri(null); setVideoNome(null) }}>
-                <Feather name="x" size={16} color={Colors.muted} />
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {uploadando && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 8 }}>
-              <ActivityIndicator size="small" color={Colors.blue} />
-              <Text style={{ fontSize: 12, color: Colors.muted }}>A carregar vídeo...</Text>
-            </View>
-          )}
-
-          <View style={s.dicaBox}>
-            <Feather name="users" size={13} color={Colors.blue} />
-            <Text style={s.dicaText}>Esta publicação aparecerá no feed de todos os membros e seguidores da vossa ONG.</Text>
-          </View>
-
-          <TouchableOpacity style={[s.btnSalvar, criandoPub && { opacity: 0.7 }]} onPress={criarPublicacao} disabled={criandoPub}>
-            {criandoPub ? <ActivityIndicator size="small" color={Colors.white} /> : <Text style={s.btnSalvarText}>Publicar</Text>}
-          </TouchableOpacity>
-        </View>
-      </View>
-      </Modal>
+     
 
        {/* Modal — Adicionar Membro */}
       <Modal visible={showAddMembro} transparent animationType="slide">
@@ -1454,6 +1592,199 @@ function DicaRow({ numero, texto }: { numero: string; texto: string }) {
     </View>
   )
 }
+
+
+const pm = StyleSheet.create({
+ overlay: {
+  flex: 1,
+  backgroundColor: 'rgba(0,0,0,0.7)',
+  justifyContent: Platform.OS === 'web' ? 'center' : 'flex-end',
+  alignItems: 'center',
+  padding: Platform.OS === 'web' ? 20 : 0,
+},
+sheet: {
+  backgroundColor: Colors.dark2,
+  borderRadius: Platform.OS === 'web' ? 24 : 0,
+  borderTopLeftRadius: 24,
+  borderTopRightRadius: 24,
+  paddingHorizontal: 20,
+  paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+  width: '100%',
+  maxWidth: 520,
+  maxHeight: '90%',
+  borderWidth: 1,
+  borderColor: 'rgba(255,255,255,0.07)',
+  borderBottomWidth: Platform.OS === 'web' ? 1 : 0,
+},
+  handle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignSelf: 'center',
+    marginTop: 12, marginBottom: 8,
+  },
+  header: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+    marginBottom: 20,
+  },
+  headerTitle: {
+    fontSize: 17, fontWeight: '800', color: Colors.white,
+  },
+  closeBtn: {
+    width: 32, height: 32, borderRadius: 10,
+    backgroundColor: Colors.dark3,
+    alignItems: 'center', justifyContent: 'center',
+  },
+
+  label: {
+    fontSize: 10, fontWeight: '700',
+    color: Colors.muted, letterSpacing: 0.8,
+    marginBottom: 8,
+  },
+  labelOpt: {
+    fontSize: 10, fontWeight: '400',
+    color: Colors.muted2, textTransform: 'none',
+  },
+
+  // Tipo chips
+  tipoChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingVertical: 9,
+    borderRadius: 50, marginRight: 8,
+    backgroundColor: Colors.dark3,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+  },
+  tipoChipText: {
+    fontSize: 13, fontWeight: '600', color: Colors.muted,
+  },
+
+  // Inputs
+  input: {
+    backgroundColor: Colors.dark3,
+    borderRadius: 12, borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    padding: 13, fontSize: 14,
+    color: Colors.white, marginBottom: 16,
+  },
+  textarea: {
+    backgroundColor: Colors.dark3,
+    borderRadius: 12, borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    padding: 13, fontSize: 14,
+    color: Colors.white, height: 110,
+    textAlignVertical: 'top',
+  },
+  charCount: {
+    fontSize: 11, color: Colors.muted2,
+    textAlign: 'right', marginTop: 5, marginBottom: 18,
+  },
+
+  // Media selector
+  mediaRow: {
+    flexDirection: 'row', gap: 12, marginBottom: 20,
+  },
+  mediaBtn: {
+    flex: 1, alignItems: 'center', gap: 8,
+    backgroundColor: Colors.dark3,
+    borderRadius: 14, padding: 18,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+  },
+  mediaBtnIcon: {
+    width: 48, height: 48, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  mediaBtnLabel: {
+    fontSize: 14, fontWeight: '700', color: Colors.white,
+  },
+  mediaBtnSub: {
+    fontSize: 11, color: Colors.muted,
+  },
+
+  // Media preview area
+  mediaPreviewWrap: {
+    borderRadius: 14, overflow: 'hidden',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    marginBottom: 18,
+  },
+  imgPreview: {
+    width: '100%', height: 200,
+  },
+  mediaPreviewActions: {
+    flexDirection: 'row', gap: 8,
+    backgroundColor: Colors.dark3,
+    padding: 10,
+  },
+  mediaActionBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7,
+  },
+  mediaActionText: {
+    fontSize: 12, fontWeight: '600', color: Colors.white,
+  },
+
+  mediaPicker: {
+    alignItems: 'center', justifyContent: 'center',
+    gap: 10, padding: 32,
+    backgroundColor: Colors.dark3,
+  },
+  mediaPickerText: {
+    fontSize: 14, fontWeight: '600',
+  },
+
+  // Vídeo preview
+  videoPreviewBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: 'rgba(168,85,247,0.08)',
+    padding: 16,
+  },
+  videoNome: {
+    fontSize: 13, fontWeight: '600', color: Colors.white, marginBottom: 2,
+  },
+  videoSub: {
+    fontSize: 11, color: Colors.muted,
+  },
+  videoCheckIcon: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: Colors.green,
+    alignItems: 'center', justifyContent: 'center',
+  },
+
+  // Upload
+  uploadRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: 'rgba(74,158,255,0.08)',
+    borderRadius: 10, padding: 12, marginBottom: 14,
+  },
+  uploadText: {
+    fontSize: 13, color: Colors.blue,
+  },
+
+  // Info
+  infoBox: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    backgroundColor: 'rgba(74,158,255,0.07)',
+    borderWidth: 1, borderColor: 'rgba(74,158,255,0.15)',
+    borderRadius: 12, padding: 13, marginBottom: 18,
+  },
+  infoText: {
+    flex: 1, fontSize: 12, color: Colors.muted, lineHeight: 17,
+  },
+
+  // Botão publicar
+  btnPublicar: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center', gap: 8,
+    backgroundColor: Colors.red,
+    borderRadius: 14, paddingVertical: 15,
+  },
+  btnPublicarText: {
+    fontSize: 15, fontWeight: '800', color: Colors.white,
+  },
+})
 
 
 const s = StyleSheet.create({

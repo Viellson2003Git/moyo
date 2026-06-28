@@ -10,6 +10,7 @@ import { Feather } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { Colors } from '../../constants/colors'
 import { mostrarAlerta } from '../../utils/alert'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { obterTelefoneLembrado, guardarTelefoneLembrado, limparTelefoneLembrado } from '../../utils/session'
 
 
@@ -179,7 +180,7 @@ function mascararTelefone(tel: string) {
       style={{ flex: 1 }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={s.root}>
+      <SafeAreaView style={s.root} edges={['top']}>
 
         {/* ── LADO ESQUERDO (web) ── */}
         {isWeb && (
@@ -490,7 +491,7 @@ function mascararTelefone(tel: string) {
 
           </View>
         </ScrollView>
-      </View>
+      </SafeAreaView>
     </KeyboardAvoidingView>
   )
 }

@@ -17,7 +17,7 @@ import { useAcesso } from '../../hooks/useAcesso'
 import { limparTelefoneLembrado } from '../../utils/session'
 import { mostrarAlerta, confirmar } from '../../utils/alert'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useSafeTop } from '../../hooks/useSafeTop'
+
 
 type Profile     = { nome: string; email: string }
 type Voluntario  = { id: string; 
@@ -34,7 +34,7 @@ export default function VoluntarioDashboard() {
   const { width }              = useWindowDimensions()
   const isWeb                  = Platform.OS === 'web' && width > 900
 
-  const safeTop = useSafeTop()
+
   const [userId,     setUserId]     = useState<string>('')
   const [profile,    setProfile]    = useState<Profile | null>(null)
   const [voluntario, setVoluntario] = useState<Voluntario | null>(null)
@@ -313,7 +313,7 @@ useEffect(() => {
       <View style={s.main}>
 
         {/* Topbar */}
-        <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
+        <View style={[s.topbar]}>
           {!isWeb && (
             <Text style={s.topbarLogo}>
               MO<Text style={{ color: Colors.redSoft }}>YO</Text>

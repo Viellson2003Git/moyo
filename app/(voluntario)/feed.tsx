@@ -1,17 +1,20 @@
 // app/(voluntario)/feed.tsx
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, ActivityIndicator, Platform,
-  useWindowDimensions, TextInput, Image, RefreshControl
+  useWindowDimensions, RefreshControl,
+  Image, Dimensions, Animated
 } from 'react-native'
 import { router } from 'expo-router'
 import { Feather } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { Colors } from '../../constants/colors'
 import { mostrarAlerta } from '../../utils/alert'
-import BottomNav from '../../components/BottomNav'
-import { useSafeTop } from '../../hooks/useSafeTop'
+import { SafeAreaView } from 'react-native-safe-area-context'
+
+const SCREEN_W = Dimensions.get('window').width
+
 type Post = {
   id: string
   ong_id: string | null
@@ -19,37 +22,68 @@ type Post = {
   titulo: string | null
   conteudo: string
   imagem_url: string | null
+  video_url: string | null
+  video_thumb: string | null
   e_global: boolean
   total_reacoes: number
+  total_views: number
   created_at: string
-  ongs?: { nome: string; tipo: string } | null
-  minhaReacao: string | null
+  ongs?: { nome: string; tipo: string }[] | null
+  minhaReacao?: string | null
+  jaViu?: boolean
 }
 
-const TIPO_CFG: Record<string, { label: string; cor: string; icon: string; bg: string }> = {
-  post:       { label: 'Publicação',  cor: Colors.blue,    icon: '📝', bg: 'rgba(74,158,255,0.1)'   },
-  anuncio:    { label: 'Anúncio',     cor: Colors.gold,    icon: '📢', bg: 'rgba(232,180,75,0.1)'   },
-  comunicado: { label: 'Comunicado',  cor: Colors.green,   icon: '📋', bg: 'rgba(46,204,113,0.1)'   },
-  evento:     { label: 'Evento',      cor: Colors.redSoft, icon: '🗓️', bg: 'rgba(232,23,58,0.1)'    },
+const TIPO_CFG: Record<string, { label: string; cor: string; bg: string }> = {
+  post:       { label: 'Publicação',  cor: Colors.blue,    bg: 'rgba(74,158,255,0.12)'  },
+  anuncio:    { label: 'Anúncio',     cor: Colors.gold,    bg: 'rgba(232,180,75,0.12)'  },
+  comunicado: { label: 'Comunicado',  cor: Colors.green,   bg: 'rgba(46,204,113,0.12)'  },
+  evento:     { label: 'Evento',      cor: Colors.redSoft, bg: 'rgba(232,23,58,0.12)'   },
+  reel:       { label: 'Vídeo',       cor: '#A855F7',      bg: 'rgba(168,85,247,0.12)'  },
 }
 
-const REACAO_EMOJIS = [
-  { tipo: 'like',    emoji: '👍', label: 'Gosto' },
-  { tipo: 'coracao', emoji: '❤️', label: 'Adoro' },
-  { tipo: 'apoio',   emoji: '🙌', label: 'Apoio' },
+const REACOES = [
+  { tipo: 'like',     emoji: '👍', label: 'Gosto'  },
+  { tipo: 'coracao',  emoji: '❤️', label: 'Adoro'  },
+  { tipo: 'apoio',    emoji: '🙌', label: 'Apoio'  },
+  { tipo: 'surpresa', emoji: '😮', label: 'Uau'    },
 ]
 
+const ongEmoji: Record<string, string> = {
+  associacao: '🏢', religiosa: '⛪', juvenil: '🌍', outro: '🤝',
+}
+
+// ── Animated card wrapper ─────────────────────────────────────────
+function AnimatedCard({ children, index }: { children: React.ReactNode; index: number }) {
+  const opacity   = useState(new Animated.Value(0))[0]
+  const translateY = useState(new Animated.Value(24))[0]
+  const scale     = useState(new Animated.Value(0.97))[0]
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(opacity,    { toValue: 1, duration: 380, delay: index * 70, useNativeDriver: true }),
+      Animated.spring(translateY, { toValue: 0, delay: index * 70, useNativeDriver: true, damping: 14, stiffness: 120 }),
+      Animated.spring(scale,      { toValue: 1, delay: index * 70, useNativeDriver: true, damping: 14, stiffness: 120 }),
+    ]).start()
+  }, [])
+
+  return (
+    <Animated.View style={{ opacity, transform: [{ translateY }, { scale }] }}>
+      {children}
+    </Animated.View>
+  )
+}
+
+// ── Componente principal ──────────────────────────────────────────
 export default function Feed() {
   const { width } = useWindowDimensions()
   const isWeb = Platform.OS === 'web' && width > 900
-  const safeTop = useSafeTop()
-  const [posts, setPosts]         = useState<Post[]>([])
-  const [loading, setLoading]     = useState(true)
+
+  const [posts, setPosts]           = useState<Post[]>([])
+  const [loading, setLoading]       = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [userId, setUserId]       = useState<string | null>(null)
-  const [voluntarioId, setVoluntarioId] = useState<string | null>(null)
-  const [filtro, setFiltro]       = useState<'todos' | 'ongs' | 'anuncios'>('todos')
-  const [mostrandoReacoes, setMostrandoReacoes] = useState<string | null>(null)
+  const [userId, setUserId]         = useState<string | null>(null)
+  const [filtro, setFiltro]         = useState<'todos' | 'ongs' | 'anuncios' | 'reels'>('todos')
+  const [reacoesPicker, setReacoesPicker] = useState<string | null>(null)
 
   useEffect(() => { init() }, [])
 
@@ -57,76 +91,82 @@ export default function Feed() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.replace('/(auth)/login'); return }
     setUserId(user.id)
-    const { data: vol } = await supabase.from('voluntarios').select('id').eq('profile_id', user.id).single()
-    if (vol) setVoluntarioId(vol.id)
     await loadPosts(user.id)
 
-    // Realtime — novos posts aparecem automaticamente
     const canal = supabase
       .channel(`feed-${user.id}-${Date.now()}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'publicacoes' }, () => loadPosts(user.id))
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'publicacoes' }, () => loadPosts(user.id))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'publicacoes' },
+        () => loadPosts(user.id))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reacoes' },
+        () => loadPosts(user.id))
       .subscribe()
 
     return () => { supabase.removeChannel(canal) }
   }
 
-  async function loadPosts(uid?: string) {
-    const id = uid || userId
-    if (!id) return
-
+  async function loadPosts(uid: string) {
     const { data } = await supabase
       .from('publicacoes')
-      .select('id, ong_id, tipo, titulo, conteudo, imagem_url, e_global, total_reacoes, created_at, ongs(nome, tipo)')
+      .select('id, ong_id, tipo, titulo, conteudo, imagem_url, video_url, video_thumb, e_global, total_reacoes, total_views, created_at, ongs(nome, tipo)')
       .order('created_at', { ascending: false })
       .limit(50)
 
     if (!data) { setLoading(false); setRefreshing(false); return }
 
-    // Busca as minhas reações
     const { data: minhasReacoes } = await supabase
-      .from('reacoes')
-      .select('publicacao_id, tipo')
-      .eq('usuario_id', id)
+      .from('reacoes').select('publicacao_id, tipo').eq('usuario_id', uid)
+
+    const { data: minhasViews } = await supabase
+      .from('publicacao_views').select('publicacao_id').eq('usuario_id', uid)
 
     const reacaoMap = new Map((minhasReacoes || []).map((r: any) => [r.publicacao_id, r.tipo]))
+    const viewSet   = new Set((minhasViews || []).map((v: any) => v.publicacao_id))
 
-    const lista = data.map(p => ({
-        ...p,
-        ongs: Array.isArray(p.ongs) ? p.ongs : p.ongs ? [p.ongs] : null,
-        minhaReacao: reacaoMap.get(p.id) ?? null, 
-    })) as Post[]
+    setPosts(data.map(p => ({
+      ...p,
+      ongs: Array.isArray(p.ongs) ? p.ongs : p.ongs ? [p.ongs] : null,
+      minhaReacao: reacaoMap.get(p.id) ?? null,
+      jaViu: viewSet.has(p.id),
+    })) as Post[])
 
-    setPosts(lista)
     setLoading(false)
     setRefreshing(false)
   }
 
+  async function registarView(postId: string, jaViu: boolean) {
+    if (!userId || jaViu) return
+    await supabase.from('publicacao_views')
+      .insert({ publicacao_id: postId, usuario_id: userId })
+      .then(() => {})
+  }
+
   async function reagir(postId: string, tipo: string, jaReagiu: string | null) {
     if (!userId) return
-    setMostrandoReacoes(null)
+    setReacoesPicker(null)
 
-    if (jaReagiu === tipo) {
-      // Remove reação
-      await supabase.from('reacoes').delete().eq('publicacao_id', postId).eq('usuario_id', userId)
-    } else if (jaReagiu) {
-      // Muda reação
-      await supabase.from('reacoes').update({ tipo }).eq('publicacao_id', postId).eq('usuario_id', userId)
-    } else {
-      // Nova reação
-      await supabase.from('reacoes').insert({ publicacao_id: postId, usuario_id: userId, tipo })
-    }
-
-    // Actualiza localmente sem recarregar tudo
     setPosts(prev => prev.map(p => {
       if (p.id !== postId) return p
       const delta = jaReagiu === tipo ? -1 : jaReagiu ? 0 : 1
-      return { ...p, minhaReacao: jaReagiu === tipo ? null : tipo, total_reacoes: Math.max(0, p.total_reacoes + delta) }
+      return {
+        ...p,
+        minhaReacao: jaReagiu === tipo ? null : tipo,
+        total_reacoes: Math.max(0, p.total_reacoes + delta),
+      }
     }))
+
+    if (jaReagiu === tipo) {
+      await supabase.from('reacoes').delete()
+        .eq('publicacao_id', postId).eq('usuario_id', userId)
+    } else if (jaReagiu) {
+      await supabase.from('reacoes').update({ tipo })
+        .eq('publicacao_id', postId).eq('usuario_id', userId)
+    } else {
+      await supabase.from('reacoes').insert({ publicacao_id: postId, usuario_id: userId, tipo })
+    }
   }
 
   function formatTempo(dateStr: string) {
-    const diff = Date.now() - new Date(dateStr).getTime()
+    const diff  = Date.now() - new Date(dateStr).getTime()
     const mins  = Math.floor(diff / 60000)
     const horas = Math.floor(mins / 60)
     const dias  = Math.floor(horas / 24)
@@ -137,11 +177,15 @@ export default function Feed() {
     return new Date(dateStr).toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' })
   }
 
-  const tipoEmoji: Record<string, string> = { associacao: '🏢', religiosa: '⛪', juvenil: '🌍', outro: '🤝' }
+  function formatViews(n: number) {
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
+    return `${n}`
+  }
 
   const filtrados = posts.filter(p => {
-    if (filtro === 'ongs') return !!p.ong_id && !p.e_global
+    if (filtro === 'ongs')     return !!p.ong_id && !p.e_global
     if (filtro === 'anuncios') return p.tipo === 'anuncio' || p.e_global
+    if (filtro === 'reels')    return p.tipo === 'reel' || !!p.video_url
     return true
   })
 
@@ -150,294 +194,612 @@ export default function Feed() {
   )
 
   return (
-    <View style={s.root}>
-      {isWeb && <SidebarWeb />}
-      <View style={s.main}>
+    <SafeAreaView style={s.root} edges={['top']}>
 
-        <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
-          <Text style={s.topbarLogo}>MO<Text style={{ color: Colors.redSoft }}>YO</Text></Text>
-          <Text style={s.topbarTitle}>Feed</Text>
-          <View style={{ flex: 1 }} />
-          <TouchableOpacity onPress={() => router.push('/(voluntario)/ongs' as any)} style={s.topbarBtn}>
+      {/* ── Header ── */}
+      <View style={s.header}>
+        <View style={s.headerLogo}>
+          <Image
+            source={require('../../assets/icon.png')}
+            style={s.cartaoLogoImg}
+            resizeMode="contain"
+          />
+          <View>
+            <Text style={s.headerTitulo}>
+              MO<Text style={{ color: Colors.redSoft }}>YO</Text>
+            </Text>
+          </View>
+        </View>
+        <View style={s.headerActions}>
+          <TouchableOpacity style={s.headerBtn} onPress={() => router.push('/(voluntario)/ongs' as any)}>
             <Feather name="users" size={16} color={Colors.muted} />
-            <Text style={s.topbarBtnText}>Seguir ONGs</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.headerBtn} onPress={() => mostrarAlerta('Em breve', 'Pesquisa em breve.')}>
+            <Feather name="search" size={16} color={Colors.muted} />
           </TouchableOpacity>
         </View>
+      </View>
 
-        {/* Filtros */}
-        <View style={s.filtrosRow}>
-          {[
-            { val: 'todos',    label: '🌍 Tudo' },
-            { val: 'ongs',     label: '🤝 ONGs' },
+      {/* ── Stories ── */}
+      <StoriesRow posts={posts} />
+
+      {/* ── Filtros ── */}
+      <View style={s.filtrosWrap}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filtrosScroll}>
+          {([
+            { val: 'todos',    label: '🌍 Todos'   },
+            { val: 'ongs',     label: '🤝 ONGs'    },
             { val: 'anuncios', label: '📢 Anúncios' },
-          ].map(f => (
+            { val: 'reels',    label: '🎬 Vídeos'  },
+          ] as any[]).map(f => (
             <TouchableOpacity
               key={f.val}
-              style={[s.filtroBtn, filtro === f.val && s.filtroBtnActive]}
-              onPress={() => setFiltro(f.val as any)}
+              style={[s.chip, filtro === f.val && s.chipActive]}
+              onPress={() => setFiltro(f.val)}
             >
-              <Text style={[s.filtroBtnText, filtro === f.val && { color: Colors.white }]}>{f.label}</Text>
+              <Text
+                numberOfLines={1}
+                style={[s.chipText, filtro === f.val && { color: Colors.white }]}
+              >
+                {f.label}
+              </Text>
             </TouchableOpacity>
           ))}
+        </ScrollView>
+      </View>
+
+      {/* ── Feed ── */}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 100, paddingTop: 8 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => { setRefreshing(true); if (userId) loadPosts(userId) }}
+            tintColor={Colors.red}
+          />
+        }
+        onStartShouldSetResponder={() => {
+          if (reacoesPicker) { setReacoesPicker(null); return true }
+          return false
+        }}
+      >
+        {filtrados.length === 0 ? (
+          <View style={s.emptyBox}>
+            <Text style={{ fontSize: 48, marginBottom: 16 }}>📭</Text>
+            <Text style={s.emptyTitulo}>Sem publicações</Text>
+            <Text style={s.emptySub}>Segue algumas ONGs para veres as publicações aqui.</Text>
+            <TouchableOpacity style={s.emptyBtn} onPress={() => router.push('/(voluntario)/ongs' as any)}>
+              <Text style={s.emptyBtnText}>Descobrir ONGs</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          filtrados.map((post, index) => (
+            <AnimatedCard key={post.id} index={index}>
+              <PostCard
+                post={post}
+                isWeb={isWeb}
+                reacoesPicker={reacoesPicker}
+                onVerPost={() => registarView(post.id, post.jaViu ?? false)}
+                onReagir={reagir}
+                onTogglePicker={(id) => setReacoesPicker(reacoesPicker === id ? null : id)}
+                formatTempo={formatTempo}
+                formatViews={formatViews}
+              />
+            </AnimatedCard>
+          ))
+        )}
+      </ScrollView>
+
+      
+    </SafeAreaView>
+  )
+}
+
+// ── Stories row ──────────────────────────────────────────────────
+function StoriesRow({ posts }: { posts: Post[] }) {
+  const ongs = Array.from(
+    new Map(
+      posts
+        .filter(p => p.ong_id && p.ongs)
+        .map(p => [p.ong_id, p.ongs])
+    ).entries()
+  ).slice(0, 8)
+
+  if (ongs.length === 0) return null
+
+  return (
+    <View style={sr.wrap}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={sr.item}>
+          <View style={[sr.ring, { padding: 2 }]}>
+            <View style={[sr.inner, { backgroundColor: Colors.red }]}>
+              <Text style={{ fontSize: 18 }}>🩸</Text>
+            </View>
+          </View>
+          <Text style={sr.nome}>Moyo</Text>
         </View>
 
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 100 }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => { setRefreshing(true); loadPosts() }}
-              tintColor={Colors.red}
-            />
-          }
-        >
-          <View style={s.content}>
-
-            {filtrados.length === 0 ? (
-              <View style={s.emptyBox}>
-                <Text style={{ fontSize: 40, marginBottom: 14 }}>📭</Text>
-                <Text style={s.emptyTitle}>Sem publicações</Text>
-                <Text style={s.emptyText}>
-                  Segue algumas ONGs para veres as publicações delas aqui.
-                </Text>
-                <TouchableOpacity style={s.emptyBtn} onPress={() => router.push('/(voluntario)/ongs' as any)}>
-                  <Text style={s.emptyBtnText}>Descobrir ONGs</Text>
-                </TouchableOpacity>
+        {ongs.map(([ongId, ongArr]) => {
+          const ong = Array.isArray(ongArr) ? ongArr[0] : ongArr as any
+          return (
+            <View key={ongId as string} style={sr.item}>
+              <View style={sr.ring}>
+                <View style={sr.inner}>
+                  <Text style={{ fontSize: 18 }}>{ongEmoji[ong?.tipo] || '🤝'}</Text>
+                </View>
               </View>
-            ) : (
-              filtrados.map(post => {
-                const cfg = TIPO_CFG[post.tipo] || TIPO_CFG['post']
-                const ongNome = (post.ongs as any)?.nome
-                const ongTipo = (post.ongs as any)?.tipo
-                const reacaoActiva = REACAO_EMOJIS.find(r => r.tipo === post.minhaReacao)
+              <Text style={sr.nome} numberOfLines={1}>{ong?.nome?.split(' ')[0] || 'ONG'}</Text>
+            </View>
+          )
+        })}
+      </ScrollView>
+    </View>
+  )
+}
 
-                return (
-                  <View key={post.id} style={s.postCard}>
+const sr = StyleSheet.create({
+  wrap: {
+    backgroundColor: Colors.dark2,
+    borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)',
+    paddingHorizontal: 16, paddingVertical: 12,
+  },
+  item: { alignItems: 'center', marginRight: 14, gap: 5 },
+  ring: {
+    width: 54, height: 54, borderRadius: 27,
+    padding: 2,
+    backgroundColor: Colors.red,
+  },
+  inner: {
+    flex: 1, borderRadius: 25,
+    backgroundColor: Colors.dark3,
+    borderWidth: 2, borderColor: Colors.dark2,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  nome: { fontSize: 10, color: Colors.muted, maxWidth: 56, textAlign: 'center' },
+})
 
-                    {/* Header */}
-                    <View style={s.postHeader}>
-                      <View style={[s.postAvatar, { backgroundColor: post.e_global ? Colors.redGlow : Colors.dark3 }]}>
-                        <Text style={{ fontSize: 18 }}>
-                          {post.e_global ? '🩸' : (tipoEmoji[ongTipo] || '🤝')}
-                        </Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={s.postAutor}>
-                          {post.e_global ? 'Moyo — Equipa' : (ongNome || 'ONG')}
-                        </Text>
-                        <View style={s.postMetaRow}>
-                          <View style={[s.postTipoBadge, { backgroundColor: cfg.bg }]}>
-                            <Text style={[s.postTipoText, { color: cfg.cor }]}>{cfg.icon} {cfg.label}</Text>
-                          </View>
-                          <Text style={s.postTempo}>{formatTempo(post.created_at)}</Text>
-                        </View>
-                      </View>
-                      {post.e_global && (
-                        <View style={s.globalBadge}>
-                          <Feather name="globe" size={10} color={Colors.redSoft} />
-                          <Text style={s.globalBadgeText}>Global</Text>
-                        </View>
-                      )}
-                    </View>
+// ── Botão de reacção com pulse ────────────────────────────────────
+function ReactionButton({
+  post, onReagir, onTogglePicker,
+}: {
+  post: Post
+  onReagir: (id: string, tipo: string, jaReagiu: string | null) => void
+  onTogglePicker: (id: string) => void
+}) {
+  const scale = useState(new Animated.Value(1))[0]
+  const reacaoActiva = REACOES.find(r => r.tipo === post.minhaReacao)
 
-                    {/* Conteúdo */}
-                    {post.titulo && <Text style={s.postTitulo}>{post.titulo}</Text>}
-                    <Text style={s.postConteudo}>{post.conteudo}</Text>
+  function handlePress() {
+    Animated.sequence([
+      Animated.spring(scale, { toValue: 1.35, useNativeDriver: true, damping: 6, stiffness: 200 }),
+      Animated.spring(scale, { toValue: 1,    useNativeDriver: true, damping: 10, stiffness: 200 }),
+    ]).start()
 
-                    {/* Imagem se existir */}
-                    {post.imagem_url && (
-                      <View style={s.postImagem}>
-                        <Image
-                          source={{ uri: post.imagem_url }}
-                          style={s.postImagemImg}
-                          resizeMode="cover"
-                        />
-                      </View>
-                    )}
+    if (post.minhaReacao) {
+      onReagir(post.id, post.minhaReacao, post.minhaReacao)
+    } else {
+      onReagir(post.id, 'like', null)
+    }
+  }
 
-                    {/* Reações */}
-                    <View style={s.postFooter}>
-                      {/* Contador de reações */}
-                      <Text style={s.postReacoesCount}>
-                        {post.total_reacoes > 0 ? `${post.total_reacoes} reacção${post.total_reacoes > 1 ? 'ões' : ''}` : ''}
-                      </Text>
+  return (
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <TouchableOpacity
+        style={[pc.reacaoPill, !!reacaoActiva && pc.reacaoPillActiva]}
+        onPress={handlePress}
+        onLongPress={() => onTogglePicker(post.id)}
+        activeOpacity={0.7}
+      >
+        <Text style={{ fontSize: 14 }}>{reacaoActiva ? reacaoActiva.emoji : '👍'}</Text>
+        {post.total_reacoes > 0 && (
+          <Text style={[pc.reacaoPillNum, !!reacaoActiva && { color: Colors.redSoft }]}>
+            {post.total_reacoes}
+          </Text>
+        )}
+      </TouchableOpacity>
+    </Animated.View>
+  )
+}
 
-                      <View style={s.postAcoes}>
-                        {/* Botão de reagir */}
-                        <View style={{ position: 'relative' }}>
-                          <TouchableOpacity
-                            style={[s.btnReagir, reacaoActiva && { backgroundColor: reacaoActiva ? Colors.redGlow : Colors.dark3 }]}
-                            
-                            onPress={() => {
-                              if (post.minhaReacao) {
-                                // Remove directamente se já reagiu
-                                reagir(post.id, post.minhaReacao, post.minhaReacao)
-                              } else {
-                                setMostrandoReacoes(mostrandoReacoes === post.id ? null : post.id)
-                              }
-                            }}
+// ── Post Card ────────────────────────────────────────────────────
+function PostCard({
+  post, isWeb, reacoesPicker,
+  onVerPost, onReagir, onTogglePicker,
+  formatTempo, formatViews,
+}: {
+  post: Post
+  isWeb: boolean
+  reacoesPicker: string | null
+  onVerPost: () => void
+  onReagir: (id: string, tipo: string, jaReagiu: string | null) => void
+  onTogglePicker: (id: string) => void
+  formatTempo: (d: string) => string
+  formatViews: (n: number) => string
+}) {
+  const cfg     = TIPO_CFG[post.tipo] || TIPO_CFG['post']
+  const ongArr  = Array.isArray(post.ongs) ? post.ongs : post.ongs ? [post.ongs] : []
+  const ong     = ongArr[0] as any
+  const ongNome = ong?.nome
+  const ongTipo = ong?.tipo
 
-                            onLongPress={() => setMostrandoReacoes(mostrandoReacoes === post.id ? null : post.id)}
-                          >
-                            <Text style={{ fontSize: 14 }}>
-                              {reacaoActiva ? reacaoActiva.emoji : '👍'}
-                            </Text>
-                            <Text style={[s.btnReagirText, reacaoActiva && { color: Colors.redSoft }]}>
-                              {reacaoActiva ? reacaoActiva.label : 'Reagir'}
-                            </Text>
-                          </TouchableOpacity>
+  return (
+    <View style={[pc.card, isWeb && pc.cardWeb]}>
 
-                          {/* Picker de reações */}
-                          {mostrandoReacoes === post.id && (
-                            <View style={s.reacoesPicker}>
-                              {REACAO_EMOJIS.map(r => (
-                                <TouchableOpacity
-                                  key={r.tipo}
-                                  style={[s.reacaoPickerBtn, post.minhaReacao === r.tipo && s.reacaoPickerBtnActive]}
+      {/* ── Cabeçalho ── */}
+      <View style={pc.headerRow}>
+        <View style={[pc.avatarMini, post.e_global && { backgroundColor: Colors.red }]}>
+          <Text style={{ fontSize: 15 }}>
+            {post.e_global ? '🩸' : (ongEmoji[ongTipo] || '🤝')}
+          </Text>
+        </View>
 
-                                  onPress={() => {
-                                    if (post.minhaReacao) {
-                                        reagir(post.id, post.minhaReacao, post.minhaReacao ?? null)
-                                    } else {
-                                        setMostrandoReacoes(mostrandoReacoes === post.id ? null : post.id)
-                                    }
-                                    }}
-                                    onLongPress={() => setMostrandoReacoes(mostrandoReacoes === post.id ? null : post.id)}
-                                >
-                                  <Text style={{ fontSize: 22 }}>{r.emoji}</Text>
-                                  <Text style={s.reacaoPickerLabel}>{r.label}</Text>
-                                </TouchableOpacity>
-                              ))}
-                            </View>
-                          )}
-                        </View>
-
-                        {/* Partilhar */}
-                        <TouchableOpacity style={s.btnReagir} onPress={() => mostrarAlerta('Em breve', 'Partilhar em breve.')}>
-                          <Feather name="share-2" size={14} color={Colors.muted} />
-                          <Text style={s.btnReagirText}>Partilhar</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  </View>
-                )
-              })
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <Text style={pc.autorNome} numberOfLines={1}>
+              {post.e_global ? 'Moyo' : (ongNome || 'ONG')}
+            </Text>
+            {post.e_global && (
+              <View style={pc.verifiedBadge}>
+                <Feather name="check" size={8} color="#fff" />
+              </View>
             )}
           </View>
-        </ScrollView>
+          <Text style={pc.tempo}>{formatTempo(post.created_at)} atrás</Text>
+        </View>
 
-        {!isWeb && (
-          <BottomNav items={[
-            { icon: 'grid',        label: 'Início',    route: '/(voluntario)'           },
-            { icon: 'rss',         label: 'Feed',      route: '/(voluntario)/feed'      },
-            { icon: 'calendar',    label: 'Agendar',   route: '/(voluntario)/agendar'   },
-            { icon: 'users',       label: 'ONGs',      route: '/(voluntario)/ongs'      },
-            { icon: 'user',        label: 'Perfil',    route: '/(voluntario)/perfil'    },
-          ]} />
+        <View style={[pc.tipoBadge, { backgroundColor: cfg.bg }]}>
+          <Text style={[pc.tipoText, { color: cfg.cor }]}>{cfg.label}</Text>
+        </View>
+      </View>
+
+      {/* ── Conteúdo ── */}
+      {post.titulo && <Text style={pc.titulo}>{post.titulo}</Text>}
+      <Text style={pc.conteudo}>{post.conteudo}</Text>
+
+      {/* ── Imagem full-bleed ── */}
+      {post.imagem_url && !post.video_url && (
+        <View style={pc.mediaWrap}>
+          <Image
+            source={{ uri: post.imagem_url }}
+            style={pc.midia}
+            resizeMode="cover"
+            onLoadStart={onVerPost}
+          />
+        </View>
+      )}
+
+      {/* ── Vídeo ── */}
+      {post.video_url && (
+        <View style={pc.videoWrap}>
+          {Platform.OS === 'web' ? (
+            // @ts-ignore
+            <video
+              controls
+              style={{ width: '100%', maxHeight: 340, backgroundColor: '#000', display: 'block', borderRadius: 0 } as any}
+              src={post.video_url}
+              poster={post.video_thumb ?? undefined}
+            />
+          ) : (
+            <VideoThumb url={post.video_url} thumb={post.video_thumb} />
+          )}
+        </View>
+      )}
+
+      {/* ── Evento ── */}
+      {post.tipo === 'evento' && (
+        <View style={pc.eventoCard}>
+          <Text style={{ fontSize: 26 }}>📅</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={pc.eventoData}>Sábado, 14 Jun · 09:00</Text>
+            <Text style={pc.eventoLocal}>📍 Hospital Geral de Luanda</Text>
+          </View>
+          <View style={pc.eventoGratis}>
+            <Text style={pc.eventoGratisText}>Gratuito</Text>
+          </View>
+        </View>
+      )}
+
+      {/* ── Meta row ── */}
+      <View style={pc.metaRow}>
+        <ReactionButton
+          post={post}
+          onReagir={onReagir}
+          onTogglePicker={onTogglePicker}
+        />
+
+        {post.e_global && (
+          <View style={pc.globalBadge}>
+            <Feather name="globe" size={9} color={Colors.redSoft} />
+            <Text style={pc.globalBadgeText}>Global</Text>
+          </View>
+        )}
+
+        <View style={{ flex: 1 }} />
+
+        <View style={pc.viewsRow}>
+          <Feather name="eye" size={11} color={Colors.muted2} />
+          <Text style={pc.viewsText}>{formatViews(post.total_views)}</Text>
+        </View>
+
+        <TouchableOpacity
+          style={pc.shareBtn}
+          onPress={() => {
+            if (Platform.OS === 'web' && (navigator as any).share) {
+              ;(navigator as any).share({ title: post.titulo || 'Moyo', text: post.conteudo })
+            } else {
+              mostrarAlerta('Em breve', 'Partilha em breve.')
+            }
+          }}
+        >
+          <Feather name="corner-up-right" size={14} color={Colors.muted} />
+        </TouchableOpacity>
+
+        {/* Picker de reacções (long press) */}
+        {reacoesPicker === post.id && (
+          <View style={pc.picker}>
+            {REACOES.map(r => (
+              <TouchableOpacity
+                key={r.tipo}
+                style={[pc.pickerBtn, post.minhaReacao === r.tipo && pc.pickerBtnActivo]}
+                onPress={() => onReagir(post.id, r.tipo, post.minhaReacao ?? null)}
+              >
+                <Text style={{ fontSize: 22 }}>{r.emoji}</Text>
+                <Text style={pc.pickerLabel}>{r.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         )}
       </View>
-    </View>
-  )
-}
 
-function SidebarWeb() {
-  return (
-    <View style={s.sidebar}>
-      <View>
-        <View style={s.sidebarLogo}>
-          <View style={s.sidebarLogoIcon}>
-            <Text style={{ color: Colors.white, fontWeight: '800' }}>M</Text>
-          </View>
-          <Text style={s.sidebarLogoText}>MO<Text style={{ color: Colors.redSoft }}>YO</Text></Text>
-        </View>
-        {([
-          { icon: 'grid', label: 'Dashboard', route: '/(voluntario)' },
-          { icon: 'rss', label: 'Feed', route: '/(voluntario)/feed', active: true },
-          { icon: 'credit-card', label: 'Cartão', route: '/(voluntario)/cartao' },
-          { icon: 'calendar', label: 'Agendar', route: '/(voluntario)/agendar' },
-          { icon: 'activity', label: 'Campanhas', route: '/(voluntario)/campanhas' },
-          { icon: 'users', label: 'ONGs', route: '/(voluntario)/ongs' },
-          { icon: 'book-open', label: 'Educação', route: '/(voluntario)/educacao' },
-        ] as any[]).map(n => (
-          <TouchableOpacity key={n.label} style={[s.sidebarItem, n.active && s.sidebarItemActive]} onPress={() => router.push(n.route)}>
-            <Feather name={n.icon} size={15} color={n.active ? Colors.redSoft : Colors.muted} />
-            <Text style={[s.sidebarLabel, n.active && { color: Colors.redSoft }]}>{n.label}</Text>
-          </TouchableOpacity>
-        ))}
+      {/* ── Bottom actions ── */}
+      <View style={pc.actionsRow}>
+        <TouchableOpacity
+          style={pc.actionBtn}
+          onPress={() => {
+            if (post.minhaReacao) {
+              onReagir(post.id, post.minhaReacao, post.minhaReacao)
+            } else {
+              onReagir(post.id, 'like', null)
+            }
+          }}
+        >
+          <Text style={{ fontSize: 13 }}>
+            {REACOES.find(r => r.tipo === post.minhaReacao)?.emoji || '🤍'}
+          </Text>
+          <Text style={pc.actionText}>
+            {REACOES.find(r => r.tipo === post.minhaReacao)?.label || 'Reagir'}
+          </Text>
+        </TouchableOpacity>
+
+        <View style={pc.actionDivider} />
+
+        <TouchableOpacity
+          style={pc.actionBtn}
+          onPress={() => {
+            if (Platform.OS === 'web' && (navigator as any).share) {
+              ;(navigator as any).share({ title: post.titulo || 'Moyo', text: post.conteudo })
+            } else {
+              mostrarAlerta('Em breve', 'Partilha em breve.')
+            }
+          }}
+        >
+          <Feather name="corner-up-right" size={14} color={Colors.muted} />
+          <Text style={pc.actionText}>Partilhar</Text>
+        </TouchableOpacity>
       </View>
-      <TouchableOpacity onPress={async () => { await supabase.auth.signOut(); router.replace('/(auth)/landing' as any) }} style={s.sidebarItem}>
-        <Feather name="log-out" size={15} color={Colors.muted} />
-        <Text style={s.sidebarLabel}>Sair</Text>
-      </TouchableOpacity>
+
     </View>
   )
 }
 
+// ── Video thumbnail ───────────────────────────────────────────────
+function VideoThumb({ url, thumb }: { url: string; thumb?: string | null }) {
+  const scale = useState(new Animated.Value(1))[0]
+
+  function handlePress() {
+    Animated.sequence([
+      Animated.spring(scale, { toValue: 0.96, useNativeDriver: true, damping: 6 }),
+      Animated.spring(scale, { toValue: 1,    useNativeDriver: true, damping: 10 }),
+    ]).start(() => mostrarAlerta('Em breve', 'Player de vídeo em breve.'))
+  }
+
+  return (
+    <TouchableOpacity activeOpacity={1} onPress={handlePress} style={{ position: 'relative' }}>
+      <Animated.View style={{ transform: [{ scale }] }}>
+        {thumb ? (
+          <Image
+            source={{ uri: thumb }}
+            style={{ width: '100%', height: 240 }}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={{ width: '100%', height: 200, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' }}>
+            <Feather name="video" size={36} color={Colors.muted2} />
+          </View>
+        )}
+        <View style={vt.playBtn}>
+          <Feather name="play" size={22} color={Colors.white} />
+        </View>
+      </Animated.View>
+    </TouchableOpacity>
+  )
+}
+
+const vt = StyleSheet.create({
+  playBtn: {
+    position: 'absolute',
+    top: '50%', left: '50%',
+    marginTop: -28, marginLeft: -28,
+    width: 56, height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)',
+  },
+})
+
+// ── Estilos ────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.dark, flexDirection: 'row' },
+
+  root:   { flex: 1, backgroundColor: Colors.dark },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.dark },
-  main: { flex: 1 },
-  content: { padding: 16, maxWidth: 680, width: '100%', alignSelf: 'center' },
 
-  topbar: { height: 56, backgroundColor: Colors.dark2, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, gap: 10 },
-  topbarLogo: { fontSize: 18, fontWeight: '800', color: Colors.white },
-  topbarTitle: { fontSize: 15, fontWeight: '600', color: Colors.muted },
-  topbarBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.dark3, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
-  topbarBtnText: { fontSize: 12, fontWeight: '600', color: Colors.muted },
+  header: {
+    backgroundColor: Colors.dark,
+    paddingHorizontal: 16, paddingVertical: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)',
+  },
 
-  filtrosRow: { flexDirection: 'row', gap: 0, backgroundColor: Colors.dark2, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
-  filtroBtn: { flex: 1, paddingVertical: 12, alignItems: 'center' },
-  filtroBtnActive: { borderBottomWidth: 2, borderBottomColor: Colors.red },
-  filtroBtnText: { fontSize: 13, fontWeight: '600', color: Colors.muted },
+  cartaoLogoImg: {
+    width: 28, height: 28,
+  },
+  headerLogo:     { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  headerLogoIcon: {
+    width: 36, height: 36, backgroundColor: Colors.red,
+    borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+  },
+  headerTitulo:   { fontSize: 18, fontWeight: '800', color: Colors.white, letterSpacing: -0.5 },
+  headerActions:  { flexDirection: 'row', gap: 8 },
+  headerBtn: {
+    width: 34, height: 34, backgroundColor: Colors.dark3,
+    borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+    alignItems: 'center', justifyContent: 'center',
+  },
 
-  postCard: { backgroundColor: Colors.dark2, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)', overflow: 'hidden' },
-  postHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 16, paddingBottom: 12 },
-  postAvatar: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  postAutor: { fontSize: 14, fontWeight: '700', color: Colors.white, marginBottom: 4 },
-  postMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  postTipoBadge: { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
-  postTipoText: { fontSize: 11, fontWeight: '700' },
-  postTempo: { fontSize: 11, color: Colors.muted2 },
-  globalBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.redGlow, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
+  filtrosWrap:   { backgroundColor: Colors.dark, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
+  filtrosScroll: { paddingHorizontal: 12, paddingVertical: 10 },
+  chip: {
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 50,
+    backgroundColor: Colors.dark3, borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)', marginRight: 8,
+  },
+  chipActive:  { backgroundColor: Colors.red, borderColor: Colors.red },
+  chipText:    { fontSize: 12, fontWeight: '600', color: Colors.muted },
+
+  emptyBox:     { alignItems: 'center', padding: 60 },
+  emptyTitulo:  { fontSize: 18, fontWeight: '700', color: Colors.white, marginBottom: 8 },
+  emptySub:     { fontSize: 14, color: Colors.muted, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
+  emptyBtn:     { backgroundColor: Colors.red, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 24 },
+  emptyBtnText: { fontSize: 14, fontWeight: '700', color: Colors.white },
+})
+
+const pc = StyleSheet.create({
+  card: {
+    marginHorizontal: 12,
+    marginBottom: 12,
+    borderRadius: 18,
+    backgroundColor: Colors.dark2,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
+    overflow: 'hidden',
+  },
+  cardWeb: { maxWidth: 500, alignSelf: 'center', width: '100%' },
+
+  headerRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    padding: 14, paddingBottom: 10,
+  },
+  avatarMini: {
+    width: 38, height: 38, borderRadius: 11,
+    backgroundColor: Colors.dark3,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  autorNome:     { fontSize: 14, fontWeight: '700', color: Colors.white },
+  verifiedBadge: {
+    width: 15, height: 15, borderRadius: 8,
+    backgroundColor: Colors.blue,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  tempo:         { fontSize: 11, color: Colors.muted2, marginTop: 1 },
+  tipoBadge:     { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 0 },
+  tipoText:      { fontSize: 10, fontWeight: '700' },
+
+  titulo: {
+    fontSize: 16, fontWeight: '800', color: Colors.white,
+    paddingHorizontal: 14, marginBottom: 5, lineHeight: 22,
+  },
+  conteudo: {
+    fontSize: 14, color: 'rgba(255,255,255,0.82)',
+    lineHeight: 22, paddingHorizontal: 14, paddingBottom: 12,
+  },
+
+  
+
+  mediaWrap: { overflow: 'hidden' },
+  midia:     { width: '100%', height: 220 },
+  videoWrap: { backgroundColor: '#000', overflow: 'hidden' },
+
+  eventoCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    marginHorizontal: 14, marginBottom: 12,
+    backgroundColor: Colors.dark3, borderRadius: 12, padding: 12,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+  },
+  eventoData:      { fontSize: 14, fontWeight: '700', color: Colors.white },
+  eventoLocal:     { fontSize: 12, color: Colors.muted, marginTop: 3 },
+  eventoGratis:    { backgroundColor: 'rgba(46,204,113,0.12)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
+  eventoGratisText:{ fontSize: 11, fontWeight: '700', color: Colors.green },
+
+  metaRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 14, paddingVertical: 8, gap: 8,
+    position: 'relative',
+  },
+
+  reacaoPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 50,
+    backgroundColor: Colors.dark3,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+  },
+  reacaoPillActiva: {
+    backgroundColor: 'rgba(232,23,58,0.12)',
+    borderColor: 'rgba(232,23,58,0.3)',
+  },
+  reacaoPillNum: { fontSize: 13, fontWeight: '700', color: Colors.muted },
+
+  globalBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: Colors.redGlow,
+    borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3,
+  },
   globalBadgeText: { fontSize: 10, fontWeight: '700', color: Colors.redSoft },
 
-  postTitulo: { fontSize: 16, fontWeight: '800', color: Colors.white, paddingHorizontal: 16, marginBottom: 6 },
-  postConteudo: { fontSize: 14, color: Colors.white, lineHeight: 21, paddingHorizontal: 16, paddingBottom: 12 },
-  postImagem: { marginHorizontal: 0, marginBottom: 12 },
-  postImagemImg: { width: '100%', height: 220 },
+  viewsRow:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  viewsText: { fontSize: 12, color: Colors.muted2 },
 
-  postFooter: { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 16, paddingVertical: 10 },
-  postReacoesCount: { fontSize: 11, color: Colors.muted, marginBottom: 8 },
-  postAcoes: { flexDirection: 'row', gap: 8 },
-
-  btnReagir: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: Colors.dark3, borderRadius: 8, padding: 9 },
-  btnReagirText: { fontSize: 13, fontWeight: '600', color: Colors.muted },
-
-  reacoesPicker: {
-    position: 'absolute', bottom: 44, left: 0,
-    flexDirection: 'row', gap: 8,
-    backgroundColor: Colors.dark2,
-    borderRadius: 16, padding: 10,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 10,
-    elevation: 10, zIndex: 100,
+  shareBtn: {
+    width: 34, height: 34, borderRadius: 50,
+    backgroundColor: Colors.dark3,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
+    alignItems: 'center', justifyContent: 'center',
   },
-  reacaoPickerBtn: { alignItems: 'center', padding: 8, borderRadius: 10 },
-  reacaoPickerBtnActive: { backgroundColor: Colors.redGlow },
-  reacaoPickerLabel: { fontSize: 10, color: Colors.muted, marginTop: 4 },
 
-  emptyBox: { alignItems: 'center', padding: 48 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: Colors.white, marginBottom: 8 },
-  emptyText: { fontSize: 14, color: Colors.muted, textAlign: 'center', marginBottom: 20, lineHeight: 20 },
-  emptyBtn: { backgroundColor: Colors.red, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 24 },
-  emptyBtnText: { fontSize: 14, fontWeight: '700', color: Colors.white },
+  picker: {
+    position: 'absolute', bottom: 46, left: 0,
+    flexDirection: 'row', gap: 4,
+    backgroundColor: Colors.dark2,
+    borderRadius: 50, padding: 10,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.6, shadowRadius: 20,
+    elevation: 20, zIndex: 999,
+  },
+  pickerBtn:      { alignItems: 'center', padding: 8, borderRadius: 12, minWidth: 50 },
+  pickerBtnActivo:{ backgroundColor: Colors.redGlow },
+  pickerLabel:    { fontSize: 9, color: Colors.muted, marginTop: 4 },
 
-  sidebar: { width: 220, backgroundColor: Colors.dark2, borderRightWidth: 1, borderRightColor: 'rgba(255,255,255,0.05)', padding: 18, justifyContent: 'space-between' },
-  sidebarLogo: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 28 },
-  sidebarLogoIcon: { width: 34, height: 34, borderRadius: 9, backgroundColor: Colors.red, alignItems: 'center', justifyContent: 'center' },
-  sidebarLogoText: { fontSize: 17, fontWeight: '800', color: Colors.white },
-  sidebarItem: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 11, borderRadius: 9 },
-  sidebarItemActive: { backgroundColor: Colors.redGlow },
-  sidebarLabel: { fontSize: 13, fontWeight: '500', color: Colors.muted },
+  actionsRow: {
+    flexDirection: 'row',
+    borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)',
+    marginTop: 4,
+  },
+  actionBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center', gap: 6,
+    paddingVertical: 11,
+  },
+  actionDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.05)', marginVertical: 8 },
+  actionText:    { fontSize: 13, fontWeight: '600', color: Colors.muted },
 })

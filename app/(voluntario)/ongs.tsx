@@ -13,7 +13,7 @@ import { mostrarAlerta, confirmar } from '../../utils/alert'
 import BottomNav from '../../components/BottomNav'
 import MapaMoyo from '../../components/MapaMoyo'
 import { useProvinciaDoUser } from '../../hooks/useProvincia'
-import { useSafeTop } from '../../hooks/useSafeTop'
+import { SafeAreaView } from 'react-native-safe-area-context'
 
 type ONG = {
   id: string; nome: string; tipo: string; provincia: string
@@ -25,7 +25,7 @@ type ONG = {
 
 export default function ONGs() {
   const [seguindo, setSeguindo] = useState<Set<string>>(new Set())
-  const safeTop = useSafeTop()
+
   const { width } = useWindowDimensions()
   const isWeb = Platform.OS === 'web' && width > 900
   const { provincia } = useProvinciaDoUser()
@@ -152,11 +152,11 @@ async function handleSeguir(ongId: string) {
   )
 
   return (
-    <View style={s.root}>
+    <SafeAreaView style={s.root} edges={['top']}>
       {isWeb && <SidebarWeb />}
       <View style={s.main}>
 
-        <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
+        <View style={[s.topbar]}>
           <TouchableOpacity onPress={() => router.back()} style={{ padding: 8 }}>
             <Feather name="arrow-left" size={20} color={Colors.white} />
           </TouchableOpacity>
@@ -430,7 +430,7 @@ async function handleSeguir(ongId: string) {
           </ScrollView>
         </TouchableOpacity>
       )}
-    </View>
+    </SafeAreaView>
   )
 }
 

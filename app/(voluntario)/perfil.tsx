@@ -10,12 +10,12 @@ import { Feather } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { Colors } from '../../constants/colors'
 import { limparTelefoneLembrado } from '../../utils/session'
-import { useSafeTop } from '../../hooks/useSafeTop'
+import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function Perfil() {
   const { width } = useWindowDimensions()
   const isWeb = Platform.OS === 'web' && width > 900
-  const safeTop = useSafeTop()
+
   const [loading, setLoading]   = useState(true)
   const [saving, setSaving]     = useState(false)
   const [editMode, setEditMode] = useState(false)
@@ -97,11 +97,11 @@ export default function Perfil() {
   )
 
   return (
-    <View style={s.root}>
+    <SafeAreaView style={s.root} edges={['top']}>
       {isWeb && <SidebarWeb />}
       <View style={s.main}>
 
-        <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
+        <View style={s.topbar}>
           <TouchableOpacity onPress={() => router.back()} style={{ padding: 8 }}>
             <Feather name="arrow-left" size={20} color={Colors.white} />
           </TouchableOpacity>
@@ -221,9 +221,9 @@ export default function Perfil() {
           </View>
         </ScrollView>
 
-        {!isWeb && <BottomNav />}
+      
       </View>
-    </View>
+    </SafeAreaView>
   )
 }
 

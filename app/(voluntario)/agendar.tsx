@@ -9,9 +9,8 @@ import { router } from 'expo-router'
 import { Feather } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { Colors } from '../../constants/colors'
-import BottomNav from '../../components/BottomNav'
 import { useProvinciaDoUser } from '../../hooks/useProvincia'
-import { useSafeTop } from '../../hooks/useSafeTop'
+import { SafeAreaView } from 'react-native-safe-area-context'
 
 type Slot = {
   id: string
@@ -52,8 +51,6 @@ export default function Agendar() {
   const [agendando, setAgendando] = useState<string | null>(null)
   const [voluntarioId, setVoluntarioId] = useState<string | null>(null)
   const [isApto, setIsApto]       = useState(false)
-
-  const safeTop = useSafeTop()
 
   useEffect(() => { loadInicial() }, [])
   useEffect(() => { if (voluntarioId) loadSlots() }, [mes, ano, bancoSel, voluntarioId])
@@ -182,13 +179,13 @@ async function loadSlots() {
   )
 
   return (
-    <View style={s.root}>
+    <SafeAreaView style={s.root} edges={['top']}>
       {isWeb && <SidebarWeb onLogout={async () => { await supabase.auth.signOut(); router.replace('/(auth)/login') }} />}
 
       <View style={s.main}>
 
         {/* Topbar */}
-        <View style={[s.topbar, { paddingTop: safeTop + 8 }]}>
+        <View style={[s.topbar]}>
           <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
             <Feather name="arrow-left" size={20} color={Colors.white} />
           </TouchableOpacity>
@@ -424,19 +421,8 @@ async function loadSlots() {
             <View style={{ height: isWeb ? 40 : 100 }} />
           </View>
         </ScrollView>
-
-        {/* Bottom nav */}
-        {!isWeb && (
-        <BottomNav items={[
-          { icon: 'grid',        label: 'Início',    route: '/(voluntario)'           },
-          { icon: 'credit-card', label: 'Cartão',    route: '/(voluntario)/cartao',    active: true }, // ← muda o active conforme o ecrã
-          { icon: 'calendar',    label: 'Agendar',   route: '/(voluntario)/agendar'   },
-          { icon: 'clock',       label: 'Histórico', route: '/(voluntario)/historico' },
-          { icon: 'user',        label: 'Perfil',    route: '/(voluntario)/perfil'    },
-        ]} />
-      )}
       </View>
-    </View>
+    </SafeAreaView>
   )
 }
 
