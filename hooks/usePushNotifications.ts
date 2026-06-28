@@ -1,102 +1,113 @@
-// hooks/usePushNotifications.ts
 import { useEffect, useRef, useState } from 'react'
 import { Platform } from 'react-native'
 import Constants from 'expo-constants'
+import * as Device from 'expo-device'
+import * as Notifications from 'expo-notifications'
 import { supabase } from '../lib/supabase'
 
-// Detecta se estamos a correr dentro do Expo Go
 const isExpoGo = Constants.appOwnership === 'expo'
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+})
 
 export function usePushNotifications(userId?: string) {
   const [expoPushToken, setExpoPushToken] = useState<string>('')
-const notifListener = useRef<any>(undefined)
-const responseListener = useRef<any>(undefined)
+  const notifListener    = useRef<Notifications.Subscription | null>(null)
+  const responseListener = useRef<Notifications.Subscription | null>(null)
 
   useEffect(() => {
-    if (!userId) return
-
-    // No Expo Go (SDK 53+) push notifications nativas não funcionam —
-    // evita carregar o módulo para não rebentar a app
+    if (!userId)               return
+    if (Platform.OS === 'web') return
     if (isExpoGo) {
-      console.log('ℹ️ Push notifications desactivadas no Expo Go. Usa um development build para testar push reais.')
+      console.log('🧪 Expo Go → push desativado (SDK 53+)')
       return
     }
 
-    registerForPush()
+    registerForPush(userId)
 
-    // Carrega o módulo dinamicamente só fora do Expo Go
-    const Notifications = require('expo-notifications')
-
-    Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: true,
-      }),
+    notifListener.current = Notifications.addNotificationReceivedListener(n => {
+      console.log('📩 Notificação recebida:', n)
     })
 
-    notifListener.current = Notifications.addNotificationReceivedListener((n: any) => {
-      console.log('Notificação recebida:', n)
-    })
-
-    responseListener.current = Notifications.addNotificationResponseReceivedListener((r: any) => {
-      console.log('Clicou na notificação:', r)
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(r => {
+      console.log('👆 Utilizador clicou:', r)
     })
 
     return () => {
-      if (notifListener.current) Notifications.removeNotificationSubscription(notifListener.current)
-      if (responseListener.current) Notifications.removeNotificationSubscription(responseListener.current)
-    }
+  notifListener.current?.remove()
+  responseListener.current?.remove()
+}
   }, [userId])
 
-  async function registerForPush() {
-    if (isExpoGo) return
-
+  async function registerForPush(uid: string) {
     try {
-      const Notifications = require('expo-notifications')
-      const Device = require('expo-device')
+      if (!Device.isDevice) {
+        console.log('⛔ Emulador — push não funciona corretamente')
+        return
+      }
 
-      if (!Device.isDevice) return
+      // ── Canais Android (obrigatório para channelId funcionar) ──
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('moyo-geral', {
+          name: 'Geral',
+          importance: Notifications.AndroidImportance.DEFAULT,
+          sound: 'default',
+          vibrationPattern: [0, 150, 150, 150],
+          lightColor: '#E8173A',
+        })
+        await Notifications.setNotificationChannelAsync('moyo-urgente', {
+          name: 'Urgente',
+          importance: Notifications.AndroidImportance.MAX,
+          sound: 'default',
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#E8173A',
+          bypassDnd: true,
+        })
+      }
 
-      const { status: existingStatus } = await Notifications.getPermissionsAsync()
-      let finalStatus = existingStatus
+      const { status: existing } = await Notifications.getPermissionsAsync()
+      let finalStatus = existing
 
-      if (existingStatus !== 'granted') {
+      if (existing !== 'granted') {
         const { status } = await Notifications.requestPermissionsAsync()
         finalStatus = status
       }
 
-      if (finalStatus !== 'granted') return
-
-      if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('moyo-urgente', {
-          name: 'Moyo Urgente',
-          importance: Notifications.AndroidImportance.MAX,
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#E8173A',
-          sound: 'default',
-        })
-        await Notifications.setNotificationChannelAsync('moyo-geral', {
-          name: 'Moyo Geral',
-          importance: Notifications.AndroidImportance.DEFAULT,
-        })
+      if (finalStatus !== 'granted') {
+        console.log('⛔ Permissão negada pelo utilizador')
+        return
       }
 
-      const projectId = Constants.expoConfig?.extra?.eas?.projectId
-        ?? Constants.easConfig?.projectId
+      const projectId =
+        Constants.expoConfig?.extra?.eas?.projectId ??
+        Constants.easConfig?.projectId
 
-      const token = await Notifications.getExpoPushTokenAsync(
-        projectId ? { projectId } : undefined
-      )
-      setExpoPushToken(token.data)
-
-      if (userId && token.data) {
-        await supabase.from('profiles').update({
-          push_token: token.data,
-        }).eq('id', userId)
+      if (!projectId) {
+        console.log('⛔ projectId não encontrado no app.json')
+        return
       }
-    } catch (e) {
-      console.log('Erro ao registar push (ignorado em dev):', e)
+
+      const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId })
+
+      console.log('🔔 Push token:', token)
+      setExpoPushToken(token)
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({ push_token: token })
+        .eq('id', uid)
+
+      if (error) console.log('❌ Erro ao guardar token:', error.message)
+      else        console.log('✅ Token guardado no Supabase')
+
+    } catch (e: any) {
+      console.log('❌ Erro no registo push:', e?.message ?? e)
     }
   }
 

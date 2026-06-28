@@ -14,7 +14,7 @@ import BottomNav from '../../components/BottomNav'
 import { mostrarAlerta } from '../../utils/alert'
 import { limparTelefoneLembrado } from '../../utils/session'
 import { SafeAreaView } from 'react-native-safe-area-context'
-
+import { enviarPushParaUtilizadores } from '../../utils/sendPush'
 
 
 type Stats = {
@@ -44,7 +44,12 @@ export default function AdminDashboard() {
   const [candidatos, setCandidatos] = useState<Candidato[]>([])
   const [loading, setLoading]       = useState(true)
   const [activeTab, setActiveTab]   = useState<'dashboard' | 'candidatos' | 'slots'| 'utilizadores' | 'ongs' | 'campanhas' | 'emergencias' | 'relatorios'>('dashboard')
-  
+
+
+
+
+
+
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
@@ -142,7 +147,25 @@ const navItems = [
             <Feather name="log-out" size={15} color={Colors.muted} />
             <Text style={s.sidebarLogoutText}>Sair</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+          style={{ backgroundColor: Colors.blue, borderRadius: 10, padding: 12, marginTop: 10 }}
+          onPress={async () => {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (user) {
+              await enviarPushParaUtilizadores(
+                [user.id],
+                '🔔 Teste Moyo',
+                'Push notifications estão a funcionar!'
+              )
+              mostrarAlerta('Enviado!', 'Verifica as notificações do teu telemóvel.')
+            }
+          }}
+        >
+          <Text style={{ color: Colors.white, fontWeight: '700' }}>🔔 Testar Push</Text>
+        </TouchableOpacity>
         </View>
+
       )}
 
       <View style={s.main}>

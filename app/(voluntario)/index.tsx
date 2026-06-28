@@ -57,7 +57,7 @@ const [bancoId, setBancoId]     = useState<string | null>(null)
 const [bancoNome, setBancoNome] = useState<string>('')
 
 // No loadData, adiciona:
-
+usePushNotifications(userId)
 
   useEffect(() => { loadData() }, [])
 
@@ -177,7 +177,7 @@ const [bancoNome, setBancoNome] = useState<string>('')
       setProfile(prof)
       setVoluntario(vol)
       if (vol?.banco_id) setBancoId(vol.banco_id) 
-      usePushNotifications(user.id)
+      
 
       if (vol?.id) {
         const { data: doc } = await supabase
