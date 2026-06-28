@@ -129,30 +129,45 @@ export default function MapaMoyo({
   }
 
   // Mobile (APK) — usa WebView com o mesmo HTML
-  try {
-    const { WebView } = require('react-native-webview')
-    return (
-      <View style={[s.container, { height: altura }]}>
-        <WebView
-          source={{ html }}
-          style={{ flex:1, backgroundColor:'#0D0D0F' }}
-          scrollEnabled={false}
-          javaScriptEnabled
-          domStorageEnabled
-          originWhitelist={['*']}
-          onError={(e: any) => console.log('WebView erro:', e.nativeEvent)}
-        />
-        <Legenda />
-      </View>
-    )
-  } catch {
-    return (
-      <View style={[s.container, s.placeholder, { height: altura }]}>
-        <Feather name="map" size={32} color={Colors.muted2} />
-        <Text style={s.placeholderText}>Mapa não disponível</Text>
-      </View>
-    )
-  }
+  // Mobile (APK) — WebView com configurações correctas para Android
+try {
+  const { WebView } = require('react-native-webview')
+  return (
+    <View style={[s.container, { height: altura }]}>
+      <WebView
+        source={{ html }}
+        style={{ flex: 1, backgroundColor: '#0D0D0F' }}
+        scrollEnabled={false}
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+        originWhitelist={['*']}
+        mixedContentMode="always"
+        allowUniversalAccessFromFileURLs={true}
+        allowFileAccess={true}
+        geolocationEnabled={false}
+        onError={(e: any) => console.log('WebView erro:', e.nativeEvent)}
+        onHttpError={(e: any) => console.log('WebView HTTP erro:', e.nativeEvent)}
+        renderLoading={() => (
+          <View style={[s.container, { height: altura, position: 'absolute', width: '100%' }]}>
+            <ActivityIndicator color={Colors.red} />
+            <Text style={{ color: Colors.muted, fontSize: 12, marginTop: 8 }}>
+              A carregar mapa...
+            </Text>
+          </View>
+        )}
+        startInLoadingState={true}
+      />
+      <Legenda />
+    </View>
+  )
+} catch {
+  return (
+    <View style={[s.container, s.placeholder, { height: altura }]}>
+      <Feather name="map" size={32} color={Colors.muted2} />
+      <Text style={s.placeholderText}>Mapa não disponível</Text>
+    </View>
+  )
+}
 }
 
 function Legenda() {
