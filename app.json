@@ -14,10 +14,6 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png"
       },
-      "splash": {
-        "foregroundImage": "./assets/Splash.png",
-        "resizeMode": "cover"
-      },
       "permissions": [
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
@@ -37,6 +33,13 @@
 
     "plugins": [
       "expo-sharing",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/Splash.png",
+          "resizeMode": "cover"
+        }
+      ],
       [
         "expo-notifications",
         {
