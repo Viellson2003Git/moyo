@@ -54,7 +54,8 @@ export default function EnfermeiroDashboard() {
   }, [])
 
   async function initDashboard() {
-    const { data: { user } } = await supabase.auth.getUser()
+    const { data: { session } } = await supabase.auth.getSession()
+const user = session?.user
     if (!user) { router.replace('/(auth)/login'); return }
 
     const { data: prof } = await supabase
@@ -130,26 +131,36 @@ export default function EnfermeiroDashboard() {
   }
 
   async function loadAgendamentos(bid: string) {
-    const hoje = new Date().toISOString().split('T')[0]
-    const { data } = await supabase
-      .from('agendamentos')
-      .select('id, data, hora, estado, voluntarios(numero_serial, tipo_sanguineo, profiles(nome))')
-      .eq('banco_id', bid)
-      .eq('data', hoje)
-      .order('hora', { ascending: true })
-    setAgendamentos(data || [])
-  }
+  const agora = new Date()
+  const inicioDia = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 0, 0, 0)
+  const fimDia    = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() + 1, 0, 0, 0)
+
+  const { data, error } = await supabase
+    .from('agendamentos')
+    .select('id, data, hora, estado, voluntarios(numero_serial, tipo_sanguineo, profiles(nome))')
+    .eq('banco_id', bid)
+    .gte('data', inicioDia.toISOString())
+    .lt('data', fimDia.toISOString())
+    .order('data', { ascending: true })
+
+  if (error) console.log('erro agendamentos:', error)
+  setAgendamentos(data || [])
+}
 
   async function loadStats(bid: string) {
-    const hoje = new Date().toISOString().split('T')[0]
-    const [r, d, c, a] = await Promise.all([
-      supabase.from('fila_exames').select('*', { count: 'exact', head: true }).eq('banco_id', bid).eq('tipo', 'rastreio').eq('data', hoje).eq('estado', 'aguardando'),
-      supabase.from('fila_exames').select('*', { count: 'exact', head: true }).eq('banco_id', bid).eq('tipo', 'doacao').eq('data', hoje).eq('estado', 'aguardando'),
-      supabase.from('fila_exames').select('*', { count: 'exact', head: true }).eq('banco_id', bid).eq('data', hoje).eq('estado', 'concluido'),
-      supabase.from('agendamentos').select('*', { count: 'exact', head: true }).eq('banco_id', bid).eq('data', hoje),
-    ])
-    setStats({ rastreio: r.count || 0, doacao: d.count || 0, concluidos: c.count || 0, agendados: a.count || 0 })
-  }
+  const hoje = new Date().toISOString().split('T')[0]
+  const agora = new Date()
+  const inicioDia = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 0, 0, 0)
+  const fimDia    = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() + 1, 0, 0, 0)
+
+  const [r, d, c, a] = await Promise.all([
+    supabase.from('fila_exames').select('*', { count: 'exact', head: true }).eq('banco_id', bid).eq('tipo', 'rastreio').eq('data', hoje).eq('estado', 'aguardando'),
+    supabase.from('fila_exames').select('*', { count: 'exact', head: true }).eq('banco_id', bid).eq('tipo', 'doacao').eq('data', hoje).eq('estado', 'aguardando'),
+    supabase.from('fila_exames').select('*', { count: 'exact', head: true }).eq('banco_id', bid).eq('data', hoje).eq('estado', 'concluido'),
+    supabase.from('agendamentos').select('*', { count: 'exact', head: true }).eq('banco_id', bid).gte('data', inicioDia.toISOString()).lt('data', fimDia.toISOString()),
+  ])
+  setStats({ rastreio: r.count || 0, doacao: d.count || 0, concluidos: c.count || 0, agendados: a.count || 0 })
+}
 
   async function chamarProximo(tipo: 'rastreio' | 'doacao') {
     if (!bancoId) return

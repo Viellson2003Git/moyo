@@ -316,7 +316,8 @@ async function adicionarMembroDirecto() {
 
 
 async function loadData() {
-  const { data: { user } } = await supabase.auth.getUser()
+  const { data: { session } } = await supabase.auth.getSession()
+const user = session?.user
   if (!user) { router.replace('/(auth)/login'); return }
 
   const { data: ongData } = await supabase

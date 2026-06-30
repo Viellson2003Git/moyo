@@ -160,7 +160,8 @@ usePushNotifications(userId)
         .limit(2)
       setEmergencias(emergData || [])
 
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data: { session } } = await supabase.auth.getSession()
+const user = session?.user
       if (!user) { router.replace('/(auth)/login'); return }
 
       setUserId(user.id)

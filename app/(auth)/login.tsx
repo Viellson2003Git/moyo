@@ -60,11 +60,17 @@ const [telefoneLembrado, setTelefoneLembrado]   = useState('')
     }
   }, [telefone])
 
-  useEffect(() => {
-  checarTelefoneLembrado()
+useEffect(() => {
+  checarSessaoEAutenticacao()
 }, [])
 
-async function checarTelefoneLembrado() {
+async function checarSessaoEAutenticacao() {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (session?.user) {
+    await redirecionarConformeTipo(session.user.id)
+    return
+  }
+
   const lembrado = await obterTelefoneLembrado()
   if (lembrado?.valido) {
     setTelefoneLembrado(lembrado.telefone)

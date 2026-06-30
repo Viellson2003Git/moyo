@@ -151,7 +151,8 @@ const navItems = [
           <TouchableOpacity
           style={{ backgroundColor: Colors.blue, borderRadius: 10, padding: 12, marginTop: 10 }}
           onPress={async () => {
-            const { data: { user } } = await supabase.auth.getUser()
+            const { data: { session } } = await supabase.auth.getSession()
+const user = session?.user
             if (user) {
               await enviarPushParaUtilizadores(
                 [user.id],
@@ -1510,7 +1511,8 @@ function OngsManager() {
 
   // ── Verificação ──
 async function verificarEAprovar(id: string) {
-  const { data: { user } } = await supabase.auth.getUser()
+  const { data: { session } } = await supabase.auth.getSession()
+const user = session?.user
 
   const { data, error } = await supabase
     .from('ongs')

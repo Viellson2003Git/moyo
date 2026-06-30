@@ -51,7 +51,8 @@ export default function Exames() {
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
-    const { data: { user } } = await supabase.auth.getUser()
+    const { data: { session } } = await supabase.auth.getSession()
+const user = session?.user
     if (!user) return
 
     // ✅ busca o id correcto da tabela enfermeiros
